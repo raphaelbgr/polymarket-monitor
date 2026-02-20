@@ -86,7 +86,7 @@ export function formatPrice(value: number): string {
  * - Active: market still open for trading
  * - Won: market resolved, this outcome won (curPrice ~= 1.0)
  * - Lost: market resolved, this outcome lost (curPrice ~= 0.0)
- * - Resolved: market resolved, outcome unclear from price
+ * - Resolving: market ended, outcome not yet confirmed in price
  */
 export function positionStatus(redeemable: boolean, curPrice: number): {
   label: string;
@@ -111,7 +111,7 @@ export function positionStatus(redeemable: boolean, curPrice: number): {
     };
   }
   return {
-    label: "Resolved",
+    label: "Resolving",
     className: "border-amber-500/30 bg-amber-500/10 text-amber-400",
   };
 }

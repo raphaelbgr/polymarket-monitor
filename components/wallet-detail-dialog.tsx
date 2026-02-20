@@ -47,7 +47,7 @@ function ExactTime({ timestamp }: { timestamp: number }) {
   );
 }
 
-type PosFilter = "all" | "active" | "resolved" | "won" | "lost";
+type PosFilter = "all" | "active" | "resolving" | "won" | "lost";
 
 // ---------------------------------------------------------------------------
 // Component
@@ -261,8 +261,8 @@ function PositionsTab({ positions }: { positions: Position[] }) {
     switch (filter) {
       case "active":
         return positions.filter((p) => !p.redeemable);
-      case "resolved":
-        return positions.filter((p) => p.redeemable);
+      case "resolving":
+        return positions.filter((p) => p.redeemable && p.curPrice > 0.05 && p.curPrice < 0.95);
       case "won":
         return positions.filter((p) => p.redeemable && p.curPrice >= 0.95);
       case "lost":
@@ -275,7 +275,7 @@ function PositionsTab({ positions }: { positions: Position[] }) {
   const filters: { key: PosFilter; label: string }[] = [
     { key: "all", label: "All" },
     { key: "active", label: "Active" },
-    { key: "resolved", label: "Resolved" },
+    { key: "resolving", label: "Resolving" },
     { key: "won", label: "Won" },
     { key: "lost", label: "Lost" },
   ];
