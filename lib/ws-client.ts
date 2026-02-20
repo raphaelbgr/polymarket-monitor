@@ -12,24 +12,33 @@ let client: RealTimeDataClient | null = null;
 let tradeCallback: TradeCallback | null = null;
 let statusCallback: StatusCallback | null = null;
 let trackedAddresses: Set<string> = new Set();
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let reconnectDelay = 5000;
+const MAX_RECONNECT_DELAY = 60000;
+let shouldReconnect = true;
 
 export function setTrackedAddresses(addresses: string[]) {
   trackedAddresses = new Set(addresses.map((a) => a.toLowerCase()));
 }
 
-export function connectWebSocket(
-  onTrade: TradeCallback,
-  onStatus: StatusCallback
-) {
-  if (client) {
-    client.disconnect();
-  }
+function scheduleReconnect() {
+  if (!shouldReconnect) return;
+  if (reconnectTimer) clearTimeout(reconnectTimer);
+  reconnectTimer = setTimeout(() => {
+    reconnectDelay = Math.min(reconnectDelay * 2, MAX_RECONNECT_DELAY);
+    doConnect();
+  }, reconnectDelay);
+}
 
-  tradeCallback = onTrade;
-  statusCallback = onStatus;
+function doConnect() {
+  if (client) {
+    try { client.disconnect(); } catch {}
+    client = null;
+  }
 
   client = new RealTimeDataClient({
     onConnect: (c) => {
+      reconnectDelay = 5000; // reset on success
       c.subscribe({
         subscriptions: [{ topic: "activity", type: "trades" }],
       });
@@ -59,18 +68,38 @@ export function connectWebSocket(
       }
     },
     onStatusChange: (status: ConnectionStatus) => {
-      statusCallback?.(status === ConnectionStatus.CONNECTED);
+      const connected = status === ConnectionStatus.CONNECTED;
+      statusCallback?.(connected);
+      if (status === ConnectionStatus.DISCONNECTED) {
+        scheduleReconnect();
+      }
     },
-    autoReconnect: true,
+    autoReconnect: false, // we handle reconnect ourselves with backoff
     pingInterval: 5000,
   });
 
   client.connect();
 }
 
+export function connectWebSocket(
+  onTrade: TradeCallback,
+  onStatus: StatusCallback
+) {
+  tradeCallback = onTrade;
+  statusCallback = onStatus;
+  shouldReconnect = true;
+  reconnectDelay = 5000;
+  doConnect();
+}
+
 export function disconnectWebSocket() {
+  shouldReconnect = false;
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
   if (client) {
-    client.disconnect();
+    try { client.disconnect(); } catch {}
     client = null;
   }
 }

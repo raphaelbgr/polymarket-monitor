@@ -31,7 +31,10 @@ export function TradesFeed({ address }: { address: string }) {
     useShallow((s) => s.tradesByWallet[address.toLowerCase()] ?? [])
   );
   const [expanded, setExpanded] = useState(false);
-  const [selectedTrade, setSelectedTrade] = useState<Trade | null>(null);
+  const [snapshot, setSnapshot] = useState<{
+    trade: Trade;
+    snapshotAt: number;
+  } | null>(null);
 
   if (trades.length === 0) {
     return (
@@ -49,7 +52,7 @@ export function TradesFeed({ address }: { address: string }) {
         <div
           key={trade.transactionHash}
           className="flex items-center gap-2 text-xs cursor-pointer hover:bg-neutral-800/50 rounded px-1 -mx-1 py-0.5"
-          onClick={() => setSelectedTrade(trade)}
+          onClick={() => setSnapshot({ trade: { ...trade }, snapshotAt: Date.now() })}
         >
           <Badge
             variant="outline"
@@ -117,13 +120,14 @@ export function TradesFeed({ address }: { address: string }) {
           tradeRows
         )}
       </div>
-      {selectedTrade && (
+      {snapshot && (
         <TradeDetailDialog
-          trade={selectedTrade}
-          open={!!selectedTrade}
+          trade={snapshot.trade}
+          open={!!snapshot}
           onOpenChange={(open) => {
-            if (!open) setSelectedTrade(null);
+            if (!open) setSnapshot(null);
           }}
+          snapshotAt={snapshot.snapshotAt}
         />
       )}
     </>

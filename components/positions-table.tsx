@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ExternalLink } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { PositionDetailDialog } from "@/components/entry-detail-dialog";
 import { fetchPositions, parsePosition } from "@/lib/polymarket-api";
-import { formatNumber, formatPrice, formatUSD } from "@/lib/format";
+import { formatNumber, formatPrice, formatUSD, positionStatus } from "@/lib/format";
 import { POLL_INTERVAL_POSITIONS } from "@/lib/constants";
 import type { Position } from "@/lib/types";
 
@@ -20,7 +20,10 @@ function polymarketUrl(pos: Position): string | null {
 
 export function PositionsTable({ address }: { address: string }) {
   const [expanded, setExpanded] = useState(false);
-  const [selectedPosition, setSelectedPosition] = useState<Position | null>(null);
+  const [snapshot, setSnapshot] = useState<{
+    position: Position;
+    snapshotAt: number;
+  } | null>(null);
 
   const { data: positions } = useQuery({
     queryKey: ["positions", address],
@@ -33,6 +36,19 @@ export function PositionsTable({ address }: { address: string }) {
     },
     refetchInterval: POLL_INTERVAL_POSITIONS,
   });
+
+  const isStale = useMemo(() => {
+    if (!snapshot || !positions) return false;
+    const key = `${snapshot.position.conditionId}-${snapshot.position.outcome}`;
+    const live = positions.find((p) => `${p.conditionId}-${p.outcome}` === key);
+    if (!live) return true;
+    return (
+      live.size !== snapshot.position.size ||
+      live.curPrice !== snapshot.position.curPrice ||
+      live.marketValue !== snapshot.position.marketValue ||
+      live.unrealizedPnl !== snapshot.position.unrealizedPnl
+    );
+  }, [snapshot, positions]);
 
   if (!positions || positions.length === 0) {
     return (
@@ -48,22 +64,19 @@ export function PositionsTable({ address }: { address: string }) {
     <div className="space-y-1">
       {visible.map((pos) => {
         const url = polymarketUrl(pos);
+        const status = positionStatus(pos.redeemable, pos.curPrice);
         return (
           <div
             key={`${pos.conditionId}-${pos.outcome}`}
             className="flex items-center justify-between gap-2 text-xs cursor-pointer hover:bg-neutral-800/50 rounded px-1 -mx-1 py-0.5"
-            onClick={() => setSelectedPosition(pos)}
+            onClick={() => setSnapshot({ position: { ...pos }, snapshotAt: Date.now() })}
           >
             <div className="flex items-center gap-1.5 min-w-0">
               <Badge
                 variant="outline"
-                className={`shrink-0 text-[9px] px-1 py-0 ${
-                  pos.redeemable
-                    ? "border-amber-500/30 bg-amber-500/10 text-amber-400"
-                    : "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
-                }`}
+                className={`shrink-0 text-[9px] px-1 py-0 ${status.className}`}
               >
-                {pos.redeemable ? "Settled" : "Open"}
+                {status.label}
               </Badge>
               <span className="text-neutral-300 truncate max-w-[180px]">
                 {pos.title}
@@ -137,13 +150,15 @@ export function PositionsTable({ address }: { address: string }) {
           positionRows
         )}
       </div>
-      {selectedPosition && (
+      {snapshot && (
         <PositionDetailDialog
-          position={selectedPosition}
-          open={!!selectedPosition}
+          position={snapshot.position}
+          open={!!snapshot}
           onOpenChange={(open) => {
-            if (!open) setSelectedPosition(null);
+            if (!open) setSnapshot(null);
           }}
+          snapshotAt={snapshot.snapshotAt}
+          isStale={isStale}
         />
       )}
     </>

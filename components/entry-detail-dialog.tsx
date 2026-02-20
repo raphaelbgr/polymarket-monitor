@@ -9,8 +9,24 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { formatUSD, formatPrice, formatNumber, formatDateTime } from "@/lib/format";
+import { formatUSD, formatPrice, formatNumber, formatDateTime, formatTime, positionStatus } from "@/lib/format";
 import type { Trade, Position } from "@/lib/types";
+
+function SnapshotInfo({ snapshotAt, isStale }: { snapshotAt?: number; isStale?: boolean }) {
+  if (!snapshotAt) return null;
+  return (
+    <div className="border-t border-neutral-800 pt-2 space-y-1.5">
+      {isStale && (
+        <div className="text-[10px] text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded px-2 py-1">
+          Data may have changed since this snapshot was taken
+        </div>
+      )}
+      <div className="text-[10px] text-neutral-600">
+        Snapshot at {formatTime(snapshotAt / 1000)}
+      </div>
+    </div>
+  );
+}
 
 function CopyField({ label, value }: { label: string; value: string }) {
   const [copied, setCopied] = useState(false);
@@ -63,10 +79,12 @@ export function TradeDetailDialog({
   trade,
   open,
   onOpenChange,
+  snapshotAt,
 }: {
   trade: Trade;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  snapshotAt?: number;
 }) {
   const polygonUrl = `https://polygonscan.com/tx/${trade.transactionHash}`;
 
@@ -75,7 +93,7 @@ export function TradeDetailDialog({
       <DialogContent className="max-w-md bg-neutral-900 border-neutral-800 overflow-hidden">
         <DialogHeader>
           <DialogTitle className="text-sm text-neutral-200">
-            Trade Detail
+            Trade Details
           </DialogTitle>
         </DialogHeader>
 
@@ -110,11 +128,11 @@ export function TradeDetailDialog({
 
           {/* Fields */}
           <div className="space-y-1.5 border-t border-neutral-800 pt-3">
-            <Field label="Size (USD)" value={formatUSD(trade.size)} />
+            <Field label="Amount" value={formatUSD(trade.size)} />
             <Field label="Price" value={formatPrice(trade.price)} />
             <Field
               label="Shares"
-              value={formatNumber(trade.size / trade.price, 2)}
+              value={formatNumber(trade.price > 0 ? trade.size / trade.price : 0, 2)}
             />
             <Field label="Time" value={formatDateTime(trade.timestamp)} />
           </div>
@@ -138,6 +156,8 @@ export function TradeDetailDialog({
               View on PolygonScan
             </a>
           </div>
+
+          <SnapshotInfo snapshotAt={snapshotAt} />
         </div>
       </DialogContent>
     </Dialog>
@@ -150,10 +170,14 @@ export function PositionDetailDialog({
   position,
   open,
   onOpenChange,
+  snapshotAt,
+  isStale,
 }: {
   position: Position;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  snapshotAt?: number;
+  isStale?: boolean;
 }) {
   const polyUrl = position.eventSlug
     ? `https://polymarket.com/event/${position.eventSlug}`
@@ -166,7 +190,7 @@ export function PositionDetailDialog({
       <DialogContent className="max-w-md bg-neutral-900 border-neutral-800 overflow-hidden">
         <DialogHeader>
           <DialogTitle className="text-sm text-neutral-200">
-            Position Detail
+            Position Details
           </DialogTitle>
         </DialogHeader>
 
@@ -175,23 +199,24 @@ export function PositionDetailDialog({
           <div className="space-y-1">
             <p className="text-sm text-neutral-200 leading-tight break-words">{position.title}</p>
             <div className="flex items-center gap-2">
-              <Badge
-                variant="outline"
-                className={`text-[10px] px-1.5 py-0 ${
-                  position.redeemable
-                    ? "border-amber-500/30 bg-amber-500/10 text-amber-400"
-                    : "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
-                }`}
-              >
-                {position.redeemable ? "Settled" : "Open"}
-              </Badge>
+              {(() => {
+                const status = positionStatus(position.redeemable, position.curPrice);
+                return (
+                  <Badge
+                    variant="outline"
+                    className={`text-[10px] px-1.5 py-0 ${status.className}`}
+                  >
+                    {status.label}
+                  </Badge>
+                );
+              })()}
               <span className="text-xs text-neutral-400">{position.outcome}</span>
             </div>
           </div>
 
           {/* Core position data */}
           <div className="space-y-1.5 border-t border-neutral-800 pt-3">
-            <Field label="Size (shares)" value={formatNumber(position.size)} />
+            <Field label="Shares" value={formatNumber(position.size)} />
             <Field label="Avg Price" value={formatPrice(position.avgPrice)} />
             <Field label="Current Price" value={formatPrice(position.curPrice)} />
             <Field label="Market Value" value={formatUSD(position.marketValue)} />
@@ -217,8 +242,8 @@ export function PositionDetailDialog({
             )}
             {position.percentPnl !== 0 && (
               <Field
-                label="PnL %"
-                value={`${position.percentPnl >= 0 ? "+" : ""}${(position.percentPnl * 100).toFixed(1)}%`}
+                label="Return"
+                value={`${position.percentPnl >= 0 ? "+" : ""}${position.percentPnl.toFixed(1)}%`}
                 className={position.percentPnl >= 0 ? "text-emerald-400" : "text-red-400"}
               />
             )}
@@ -251,6 +276,8 @@ export function PositionDetailDialog({
               </a>
             </div>
           )}
+
+          <SnapshotInfo snapshotAt={snapshotAt} isStale={isStale} />
         </div>
       </DialogContent>
     </Dialog>

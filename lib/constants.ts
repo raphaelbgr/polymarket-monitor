@@ -1,8 +1,8 @@
 export const DATA_API_BASE = "https://data-api.polymarket.com";
 export const CLOB_API_BASE = "https://clob.polymarket.com";
 export const GAMMA_API_BASE = "https://gamma-api.polymarket.com";
-export const POLYGON_RPC_URL = "https://polygon-rpc.com";
-export const POLYGON_RPC_FALLBACK = "https://rpc.ankr.com/polygon";
+export const POLYGON_RPC_URL = "https://polygon-bor-rpc.publicnode.com";
+export const POLYGON_RPC_FALLBACK = "https://polygon.drpc.org";
 
 export const USDC_E_ADDRESS = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174" as const;
 export const USDC_E_DECIMALS = 6;

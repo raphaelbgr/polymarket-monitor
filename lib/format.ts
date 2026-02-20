@@ -80,3 +80,38 @@ export function formatNumber(value: number, decimals: number = 2): string {
 export function formatPrice(value: number): string {
   return value.toFixed(3);
 }
+
+/**
+ * Polymarket-consistent position status label.
+ * - Active: market still open for trading
+ * - Won: market resolved, this outcome won (curPrice ~= 1.0)
+ * - Lost: market resolved, this outcome lost (curPrice ~= 0.0)
+ * - Resolved: market resolved, outcome unclear from price
+ */
+export function positionStatus(redeemable: boolean, curPrice: number): {
+  label: string;
+  className: string;
+} {
+  if (!redeemable) {
+    return {
+      label: "Active",
+      className: "border-blue-500/30 bg-blue-500/10 text-blue-400",
+    };
+  }
+  if (curPrice >= 0.95) {
+    return {
+      label: "Won",
+      className: "border-emerald-500/30 bg-emerald-500/10 text-emerald-400",
+    };
+  }
+  if (curPrice <= 0.05) {
+    return {
+      label: "Lost",
+      className: "border-red-500/30 bg-red-500/10 text-red-400",
+    };
+  }
+  return {
+    label: "Resolved",
+    className: "border-amber-500/30 bg-amber-500/10 text-amber-400",
+  };
+}

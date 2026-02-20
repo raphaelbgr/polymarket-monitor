@@ -28,6 +28,7 @@ import {
   formatNumber,
   formatPrice,
   formatTimeWithAge,
+  positionStatus,
 } from "@/lib/format";
 import type { TrackedWallet, Position, Trade } from "@/lib/types";
 
@@ -46,7 +47,7 @@ function ExactTime({ timestamp }: { timestamp: number }) {
   );
 }
 
-type PosFilter = "all" | "open" | "settled" | "win" | "loss";
+type PosFilter = "all" | "active" | "resolved" | "won" | "lost";
 
 // ---------------------------------------------------------------------------
 // Component
@@ -160,13 +161,13 @@ function OverviewTab({
   balance: number | undefined;
   positions: Position[];
 }) {
-  const openCount = positions.filter((p) => !p.redeemable).length;
-  const settledCount = positions.filter((p) => p.redeemable).length;
+  const activeCount = positions.filter((p) => !p.redeemable).length;
+  const resolvedCount = positions.filter((p) => p.redeemable).length;
 
-  const winning = positions.filter((p) => p.cashPnl > 0);
-  const losing = positions.filter((p) => p.cashPnl < 0);
-  const winTotal = winning.reduce((s, p) => s + p.cashPnl, 0);
-  const loseTotal = losing.reduce((s, p) => s + p.cashPnl, 0);
+  const won = positions.filter((p) => p.redeemable && p.curPrice >= 0.95);
+  const lost = positions.filter((p) => p.redeemable && p.curPrice <= 0.05);
+  const wonPnl = won.reduce((s, p) => s + p.cashPnl, 0);
+  const lostPnl = lost.reduce((s, p) => s + p.cashPnl, 0);
 
   return (
     <div className="space-y-5 text-xs">
@@ -213,23 +214,23 @@ function OverviewTab({
       {/* Positions Breakdown */}
       <Section title="Current Positions">
         <Row
-          label="Open / Settled"
-          value={`${openCount} / ${settledCount}`}
+          label="Active / Resolved"
+          value={`${activeCount} / ${resolvedCount}`}
         />
         <Row
-          label="Winning"
+          label="Won"
           value={
             <span className="text-emerald-400">
-              {winning.length} ({winning.length > 0 ? "+" : ""}
-              {formatUSD(winTotal)})
+              {won.length} ({won.length > 0 ? "+" : ""}
+              {formatUSD(wonPnl)})
             </span>
           }
         />
         <Row
-          label="Losing"
+          label="Lost"
           value={
             <span className="text-red-400">
-              {losing.length} ({formatUSD(loseTotal)})
+              {lost.length} ({formatUSD(lostPnl)})
             </span>
           }
         />
@@ -258,14 +259,14 @@ function PositionsTab({ positions }: { positions: Position[] }) {
 
   const filtered = useMemo(() => {
     switch (filter) {
-      case "open":
+      case "active":
         return positions.filter((p) => !p.redeemable);
-      case "settled":
+      case "resolved":
         return positions.filter((p) => p.redeemable);
-      case "win":
-        return positions.filter((p) => p.cashPnl > 0);
-      case "loss":
-        return positions.filter((p) => p.cashPnl < 0);
+      case "won":
+        return positions.filter((p) => p.redeemable && p.curPrice >= 0.95);
+      case "lost":
+        return positions.filter((p) => p.redeemable && p.curPrice <= 0.05);
       default:
         return positions;
     }
@@ -273,10 +274,10 @@ function PositionsTab({ positions }: { positions: Position[] }) {
 
   const filters: { key: PosFilter; label: string }[] = [
     { key: "all", label: "All" },
-    { key: "open", label: "Open" },
-    { key: "settled", label: "Settled" },
-    { key: "win", label: "Win" },
-    { key: "loss", label: "Loss" },
+    { key: "active", label: "Active" },
+    { key: "resolved", label: "Resolved" },
+    { key: "won", label: "Won" },
+    { key: "lost", label: "Lost" },
   ];
 
   return (
@@ -305,16 +306,17 @@ function PositionsTab({ positions }: { positions: Position[] }) {
               className="flex items-center justify-between gap-2 text-xs py-0.5"
             >
               <div className="flex items-center gap-1.5 min-w-0">
-                <Badge
-                  variant="outline"
-                  className={`shrink-0 text-[9px] px-1 py-0 ${
-                    pos.redeemable
-                      ? "border-amber-500/30 bg-amber-500/10 text-amber-400"
-                      : "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
-                  }`}
-                >
-                  {pos.redeemable ? "Settled" : "Open"}
-                </Badge>
+                {(() => {
+                  const status = positionStatus(pos.redeemable, pos.curPrice);
+                  return (
+                    <Badge
+                      variant="outline"
+                      className={`shrink-0 text-[9px] px-1 py-0 ${status.className}`}
+                    >
+                      {status.label}
+                    </Badge>
+                  );
+                })()}
                 <span className="text-neutral-300 truncate max-w-[200px]">
                   {pos.title}
                 </span>
