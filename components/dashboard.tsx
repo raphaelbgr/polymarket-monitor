@@ -202,7 +202,7 @@ export function Dashboard() {
           } else {
             // Subsequent polls: only new trades
             const cursor = cursors.current[wallet.address];
-            const newTrades = trades.filter((t) => t.timestamp > cursor);
+            const newTrades = trades.filter((t) => t.timestamp >= cursor);
             let newCursor = cursor;
 
             for (const trade of newTrades) {

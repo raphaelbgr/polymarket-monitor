@@ -1,21 +1,28 @@
-import { COPY_TRADE_WS_URL } from "./constants";
+import { COPY_TRADE_WS_URL, COPY_TRADE_WS_TOKEN } from "./constants";
 import { Trade, CopyTradeConfig } from "./types";
 
 let ws: WebSocket | null = null;
 let messageHandler: ((data: any) => void) | null = null;
+let reconnectDelay = 5000;
+const MAX_RECONNECT_DELAY = 60000;
 
 export function connectCopyTradeServer(onMessage: (data: any) => void) {
   messageHandler = onMessage;
 
   function connect() {
     try {
-      ws = new WebSocket(COPY_TRADE_WS_URL);
+      const url = COPY_TRADE_WS_TOKEN
+        ? `${COPY_TRADE_WS_URL}?token=${COPY_TRADE_WS_TOKEN}`
+        : COPY_TRADE_WS_URL;
+      ws = new WebSocket(url);
     } catch {
-      setTimeout(connect, 5000);
+      setTimeout(connect, reconnectDelay);
+      reconnectDelay = Math.min(reconnectDelay * 2, MAX_RECONNECT_DELAY);
       return;
     }
 
     ws.onopen = () => {
+      reconnectDelay = 5000; // Reset on successful connection
       messageHandler?.({
         type: "engine",
         status: "ACTIVE",
@@ -38,7 +45,8 @@ export function connectCopyTradeServer(onMessage: (data: any) => void) {
         status: "OFF",
         message: "Copy-trade server disconnected",
       });
-      setTimeout(connect, 5000);
+      setTimeout(connect, reconnectDelay);
+      reconnectDelay = Math.min(reconnectDelay * 2, MAX_RECONNECT_DELAY);
     };
 
     ws.onerror = () => {

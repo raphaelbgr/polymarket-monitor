@@ -67,13 +67,13 @@ export const useSystemStore = create<SystemState>((set, get) => ({
   addOrderStatus: (status) =>
     set((s) => ({
       orderStatuses: [status, ...s.orderStatuses].slice(0, 100),
-      status: { ...s.status, ordersTotal: s.status.ordersTotal + 1 },
     })),
 
   incrementOrders: (type) =>
     set((s) => ({
       status: {
         ...s.status,
+        ordersTotal: s.status.ordersTotal + 1,
         ...(type === "filled" && {
           ordersFilled: s.status.ordersFilled + 1,
         }),

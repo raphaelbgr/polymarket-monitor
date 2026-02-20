@@ -18,12 +18,13 @@ export const useTradeStore = create<TradeState>((set, get) => ({
 
     if (seenTxHashes.has(trade.transactionHash)) return false;
 
-    if (seenTxHashes.size >= DEDUP_SET_MAX_SIZE) {
-      const iter = seenTxHashes.values();
-      const oldest = iter.next().value;
-      if (oldest) seenTxHashes.delete(oldest);
+    // Clone first, then mutate the clone
+    const newSet = new Set(seenTxHashes);
+    if (newSet.size >= DEDUP_SET_MAX_SIZE) {
+      const oldest = newSet.values().next().value;
+      if (oldest) newSet.delete(oldest);
     }
-    seenTxHashes.add(trade.transactionHash);
+    newSet.add(trade.transactionHash);
 
     const wallet = trade.walletAddress.toLowerCase();
     const existing = tradesByWallet[wallet] || [];
@@ -31,7 +32,7 @@ export const useTradeStore = create<TradeState>((set, get) => ({
 
     set({
       tradesByWallet: { ...tradesByWallet, [wallet]: updated },
-      seenTxHashes: new Set(seenTxHashes),
+      seenTxHashes: newSet,
     });
 
     return true;

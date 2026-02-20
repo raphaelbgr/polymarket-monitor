@@ -62,6 +62,8 @@ interface StatusMessage {
   reason?: string;
   error?: string;
   timestamp: number;
+  walletLabel?: string;
+  trade?: TradeSignal;
 }
 
 interface BalanceMessage {
@@ -273,8 +275,10 @@ async function executeCopyTrade(
 ): Promise<void> {
   const label = `[${trade.walletLabel}] ${trade.title} ${trade.outcome}`;
 
+  const tradeExtra: Partial<StatusMessage> = { walletLabel: trade.walletLabel, trade };
+
   // -- DETECTED --
-  broadcast(statusMsg("DETECTED", `${label} — ${trade.side} ${trade.size}@${trade.price}`));
+  broadcast(statusMsg("DETECTED", `${label} — ${trade.side} ${trade.size}@${trade.price}`, tradeExtra));
   log("INFO", `Trade detected: ${label} ${trade.side} ${trade.size}@${trade.price}`);
 
   // -- Engine paused? --
@@ -282,6 +286,7 @@ async function executeCopyTrade(
     broadcast(
       statusMsg("SKIPPED", `${label} — engine paused (circuit breaker)`, {
         reason: "circuit_breaker",
+        ...tradeExtra,
       }),
     );
     log("WARN", `Skipped (engine paused): ${label}`);
@@ -289,13 +294,14 @@ async function executeCopyTrade(
   }
 
   // -- VALIDATING --
-  broadcast(statusMsg("VALIDATING", `${label} — checking trade validity`));
+  broadcast(statusMsg("VALIDATING", `${label} — checking trade validity`, tradeExtra));
 
   // 1. Only BUY
   if (trade.side !== "BUY") {
     broadcast(
       statusMsg("SKIPPED", `${label} — only BUY trades are copied`, {
         reason: "sell_trade",
+        ...tradeExtra,
       }),
     );
     log("INFO", `Skipped (SELL): ${label}`);
@@ -308,6 +314,7 @@ async function executeCopyTrade(
     broadcast(
       statusMsg("SKIPPED", `${label} — trade is ${age}s old (max ${MAX_TRADE_AGE_S}s)`, {
         reason: "stale",
+        ...tradeExtra,
       }),
     );
     log("INFO", `Skipped (stale ${age}s): ${label}`);
@@ -315,7 +322,7 @@ async function executeCopyTrade(
   }
 
   if (!clobClient) {
-    broadcast(statusMsg("FAILED", `${label} — CLOB client not initialized`, { error: "no_client" }));
+    broadcast(statusMsg("FAILED", `${label} — CLOB client not initialized`, { error: "no_client", ...tradeExtra }));
     log("ERROR", "CLOB client not initialized");
     return;
   }
@@ -328,6 +335,7 @@ async function executeCopyTrade(
     broadcast(
       statusMsg("FAILED", `${label} — could not fetch market`, {
         error: (err as Error).message,
+        ...tradeExtra,
       }),
     );
     log("ERROR", `Market fetch failed for ${trade.conditionId}: ${(err as Error).message}`);
@@ -339,6 +347,7 @@ async function executeCopyTrade(
     broadcast(
       statusMsg("SKIPPED", `${label} — market not accepting orders`, {
         reason: "market_closed",
+        ...tradeExtra,
       }),
     );
     log("INFO", `Skipped (not accepting orders): ${label}`);
@@ -353,6 +362,7 @@ async function executeCopyTrade(
     broadcast(
       statusMsg("FAILED", `${label} — outcome "${trade.outcome}" not found in market`, {
         error: "outcome_not_found",
+        ...tradeExtra,
       }),
     );
     log("ERROR", `Outcome "${trade.outcome}" not found in market ${trade.conditionId}`);
@@ -368,6 +378,7 @@ async function executeCopyTrade(
     broadcast(
       statusMsg("FAILED", `${label} — could not fetch midpoint`, {
         error: (err as Error).message,
+        ...tradeExtra,
       }),
     );
     log("ERROR", `Midpoint fetch failed: ${(err as Error).message}`);
@@ -378,6 +389,7 @@ async function executeCopyTrade(
     broadcast(
       statusMsg("SKIPPED", `${label} — midpoint ${midpointValue} is near 0 or 1 (likely resolved)`, {
         reason: "resolved",
+        ...tradeExtra,
       }),
     );
     log("INFO", `Skipped (midpoint ${midpointValue}): ${label}`);
@@ -391,7 +403,7 @@ async function executeCopyTrade(
       statusMsg(
         "SKIPPED",
         `${label} — price drifted ${(drift * 100).toFixed(1)}% (mid=${midpointValue}, whale=${trade.price})`,
-        { reason: "price_drift" },
+        { reason: "price_drift", ...tradeExtra },
       ),
     );
     log("INFO", `Skipped (drift ${(drift * 100).toFixed(1)}%): ${label}`);
@@ -443,6 +455,7 @@ async function executeCopyTrade(
     broadcast(
       statusMsg("SKIPPED", `${label} — calculated size or price is zero`, {
         reason: "zero_order",
+        ...tradeExtra,
       }),
     );
     log("WARN", `Skipped (zero order): size=${orderSize}, price=${orderPrice}`);
@@ -454,6 +467,7 @@ async function executeCopyTrade(
     statusMsg(
       "PLACING",
       `${label} — BUY ${orderSize}@${orderPrice} (whale: ${trade.size}@${trade.price})`,
+      tradeExtra,
     ),
   );
   log(
@@ -477,6 +491,7 @@ async function executeCopyTrade(
       broadcast(
         statusMsg("FILLED", `${label} — order placed: ${orderSize}@${orderPrice}`, {
           orderId: resp.orderID ?? null,
+          ...tradeExtra,
         }),
       );
       log("INFO", `Order placed successfully: ${resp.orderID ?? "no-id"}`);
@@ -487,6 +502,7 @@ async function executeCopyTrade(
       broadcast(
         statusMsg("FAILED", `${label} — order rejected: ${errMsg}`, {
           error: errMsg,
+          ...tradeExtra,
         }),
       );
       log("ERROR", `Order rejected: ${errMsg}`);
@@ -501,6 +517,7 @@ async function executeCopyTrade(
     broadcast(
       statusMsg("FAILED", `${label} — order error: ${errMsg}`, {
         error: errMsg,
+        ...tradeExtra,
       }),
     );
     log("ERROR", `Order execution error: ${errMsg}`);
@@ -596,8 +613,23 @@ function handleMessage(ws: WebSocket, raw: string): void {
     return;
   }
 
+  // Validate config ranges
+  const config = parsed.config;
+  config.multiplier = Math.max(0.01, Math.min(10, config.multiplier || 0.5));
+  config.maxSingleTrade = Math.max(0.5, Math.min(10000, config.maxSingleTrade || 1));
+  config.priceImprovementPct = Math.max(0, Math.min(0.10, config.priceImprovementPct || 0.02));
+
+  // Validate trade fields
+  const trade = parsed.trade;
+  if (!trade.conditionId || !trade.outcome || !trade.side ||
+      !isFinite(trade.price) || trade.price <= 0 ||
+      !isFinite(trade.size) || trade.size <= 0) {
+    log("WARN", "Invalid trade data received");
+    return;
+  }
+
   // Fire and forget — don't block the WS handler
-  executeCopyTrade(parsed.trade, parsed.config).catch((err) => {
+  executeCopyTrade(trade, config).catch((err) => {
     log("ERROR", `Unhandled error in executeCopyTrade: ${(err as Error).message}`);
   });
 }
@@ -627,6 +659,16 @@ async function main(): Promise<void> {
   });
 
   wss.on("connection", (ws, req) => {
+    const url = new URL(req.url || "", `http://localhost:${WS_PORT}`);
+    const token = url.searchParams.get("token");
+    const expectedToken = process.env.WS_AUTH_TOKEN;
+
+    if (expectedToken && token !== expectedToken) {
+      ws.close(4001, "Unauthorized");
+      log("WARN", `Rejected connection: invalid token`);
+      return;
+    }
+
     const remote = req.socket.remoteAddress ?? "unknown";
     log("INFO", `Client connected from ${remote}`);
     clients.add(ws);

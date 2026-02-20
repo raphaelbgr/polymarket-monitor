@@ -14,6 +14,7 @@ export const POLL_INTERVAL_BALANCE = 30_000;
 export const DEDUP_SET_MAX_SIZE = 10_000;
 
 export const COPY_TRADE_WS_URL = "ws://localhost:8765";
+export const COPY_TRADE_WS_TOKEN = process.env.NEXT_PUBLIC_COPY_TRADE_WS_TOKEN || "";
 
 export const DEFAULT_COPY_TRADE_CONFIG = {
   multiplier: 0.5,
