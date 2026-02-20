@@ -1,0 +1,19 @@
+{
+  "wallets": [
+    {
+      "address": "0xd0d6053c3c37e727402d84c14069780d360993aa",
+      "label": "uncommon-oat",
+      "notes": "$487K portfolio. High-freq BTC/ETH/SOL 5-min directional markets."
+    },
+    {
+      "address": "0x1979ae6b7e6534de9c4539d0c205e582ca637c9d",
+      "label": "square-guy",
+      "notes": "$608K portfolio. BTC/ETH/SOL/XRP Up or Down markets, 5-min to 4-hour."
+    },
+    {
+      "address": "0x204f72f35326db932158cba6adff0b9a1da95e14",
+      "label": "swisstony",
+      "notes": ""
+    }
+  ]
+}
