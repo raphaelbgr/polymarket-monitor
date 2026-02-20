@@ -23,8 +23,6 @@ interface FilterState {
   setPositionFilter: (wallet: string, filter: PositionFilter) => void;
   clearTradeFilter: (wallet: string) => void;
   clearPositionFilter: (wallet: string) => void;
-  getTradeFilter: (wallet: string) => TradeFilter;
-  getPositionFilter: (wallet: string) => PositionFilter;
 
   // Presets
   loadPresets: () => void;
@@ -85,14 +83,6 @@ export const useFilterStore = create<FilterState>((set, get) => ({
     });
   },
 
-  getTradeFilter: (wallet) => {
-    return get().tradeFilters[wallet.toLowerCase()] ?? {};
-  },
-
-  getPositionFilter: (wallet) => {
-    return get().positionFilters[wallet.toLowerCase()] ?? {};
-  },
-
   loadPresets: () => {
     set({ presets: loadPresetsFromStorage() });
   },
@@ -122,3 +112,19 @@ export const useFilterStore = create<FilterState>((set, get) => ({
     }
   },
 }));
+
+// Stable empty objects — shared reference avoids infinite re-render loops.
+const EMPTY_TRADE_FILTER: TradeFilter = {};
+const EMPTY_POSITION_FILTER: PositionFilter = {};
+
+export function useTradeFilter(wallet: string): TradeFilter {
+  return useFilterStore(
+    (s) => s.tradeFilters[wallet.toLowerCase()] ?? EMPTY_TRADE_FILTER,
+  );
+}
+
+export function usePositionFilter(wallet: string): PositionFilter {
+  return useFilterStore(
+    (s) => s.positionFilters[wallet.toLowerCase()] ?? EMPTY_POSITION_FILTER,
+  );
+}

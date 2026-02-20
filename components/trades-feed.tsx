@@ -7,7 +7,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { TradeDetailDialog } from "@/components/entry-detail-dialog";
 import { TradeFilterBar } from "@/components/filter-bar";
 import { useTradeStore } from "@/lib/stores/trade-store";
-import { useFilterStore } from "@/lib/stores/filter-store";
+import { useTradeFilter } from "@/lib/stores/filter-store";
 import { useShallow } from "zustand/react/shallow";
 import { formatTimeWithAge, formatUSD, formatPrice } from "@/lib/format";
 import { filterTrades } from "@/lib/shared/filters";
@@ -33,7 +33,7 @@ export function TradesFeed({ address }: { address: string }) {
   const trades = useTradeStore(
     useShallow((s) => s.tradesByWallet[address.toLowerCase()] ?? [])
   );
-  const tradeFilter = useFilterStore((s) => s.getTradeFilter(address));
+  const tradeFilter = useTradeFilter(address);
   const [expanded, setExpanded] = useState(false);
   const [snapshot, setSnapshot] = useState<{
     trade: Trade;

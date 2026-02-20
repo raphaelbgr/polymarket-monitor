@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Filter, X, ChevronDown, Save } from "lucide-react";
-import { useFilterStore } from "@/lib/stores/filter-store";
+import { useFilterStore, useTradeFilter, usePositionFilter } from "@/lib/stores/filter-store";
 import { PresetSelector } from "@/components/preset-selector";
 import type { TradeFilter, PositionFilter } from "@/lib/shared/filters";
 
@@ -15,7 +15,7 @@ import type { TradeFilter, PositionFilter } from "@/lib/shared/filters";
 // ---------------------------------------------------------------------------
 
 export function TradeFilterBar({ address }: { address: string }) {
-  const filter = useFilterStore((s) => s.getTradeFilter(address));
+  const filter = useTradeFilter(address);
   const setFilter = useFilterStore((s) => s.setTradeFilter);
   const clearFilter = useFilterStore((s) => s.clearTradeFilter);
   const [open, setOpen] = useState(false);
@@ -183,7 +183,7 @@ export function TradeFilterBar({ address }: { address: string }) {
 // ---------------------------------------------------------------------------
 
 export function PositionFilterBar({ address }: { address: string }) {
-  const filter = useFilterStore((s) => s.getPositionFilter(address));
+  const filter = usePositionFilter(address);
   const setFilter = useFilterStore((s) => s.setPositionFilter);
   const clearFilter = useFilterStore((s) => s.clearPositionFilter);
   const [open, setOpen] = useState(false);

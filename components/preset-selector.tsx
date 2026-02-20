@@ -6,8 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Bookmark, Save, Trash2 } from "lucide-react";
-import { useFilterStore } from "@/lib/stores/filter-store";
-import type { FilterPreset, TradeFilter, PositionFilter } from "@/lib/shared/filters";
+import { useFilterStore, useTradeFilter, usePositionFilter } from "@/lib/stores/filter-store";
+import type { FilterPreset } from "@/lib/shared/filters";
 
 export function PresetSelector({
   address,
@@ -21,8 +21,8 @@ export function PresetSelector({
   const savePreset = useFilterStore((s) => s.savePreset);
   const deletePreset = useFilterStore((s) => s.deletePreset);
   const applyPreset = useFilterStore((s) => s.applyPreset);
-  const getTradeFilter = useFilterStore((s) => s.getTradeFilter);
-  const getPositionFilter = useFilterStore((s) => s.getPositionFilter);
+  const tradeFilter = useTradeFilter(address);
+  const positionFilter = usePositionFilter(address);
 
   const [open, setOpen] = useState(false);
   const [saveName, setSaveName] = useState("");
@@ -35,10 +35,7 @@ export function PresetSelector({
 
   const handleSave = () => {
     if (!saveName.trim()) return;
-    const filters =
-      scope === "trades"
-        ? getTradeFilter(address)
-        : getPositionFilter(address);
+    const filters = scope === "trades" ? tradeFilter : positionFilter;
 
     const preset: FilterPreset = {
       id: `${scope}-${Date.now()}`,

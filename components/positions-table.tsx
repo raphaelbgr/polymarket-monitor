@@ -11,7 +11,7 @@ import { PositionFilterBar } from "@/components/filter-bar";
 import { fetchPositions, parsePosition } from "@/lib/polymarket-api";
 import { formatNumber, formatPrice, formatUSD, positionStatus } from "@/lib/format";
 import { POLL_INTERVAL_POSITIONS } from "@/lib/constants";
-import { useFilterStore } from "@/lib/stores/filter-store";
+import { usePositionFilter } from "@/lib/stores/filter-store";
 import { filterPositions } from "@/lib/shared/filters";
 import type { Position } from "@/lib/types";
 
@@ -27,7 +27,7 @@ export function PositionsTable({ address }: { address: string }) {
     position: Position;
     snapshotAt: number;
   } | null>(null);
-  const positionFilter = useFilterStore((s) => s.getPositionFilter(address));
+  const positionFilter = usePositionFilter(address);
 
   const { data: allPositions } = useQuery({
     queryKey: ["positions", address],
