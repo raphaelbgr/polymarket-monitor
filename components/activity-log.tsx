@@ -3,6 +3,7 @@
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useSystemStore } from "@/lib/stores/system-store";
+import { formatTime } from "@/lib/format";
 
 const sourceBadgeColors: Record<string, string> = {
   WS: "border-blue-500/30 bg-blue-500/10 text-blue-400",
@@ -18,16 +19,6 @@ const levelColors: Record<string, string> = {
   error: "text-red-400",
   success: "text-emerald-400",
 };
-
-function formatTime(timestamp: number): string {
-  const date = new Date(timestamp * 1000);
-  return date.toLocaleTimeString("en-US", {
-    hour12: false,
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
-}
 
 export function ActivityLog() {
   const activityLog = useSystemStore((s) => s.activityLog);

@@ -19,6 +19,7 @@ import {
   disconnectCopyTradeServer,
 } from "@/lib/copy-trade-client";
 import { fetchTrades, parseTrade } from "@/lib/polymarket-api";
+import { formatUSD, formatPrice } from "@/lib/format";
 import { POLL_INTERVAL_TRADES } from "@/lib/constants";
 import type { RawTrade } from "@/lib/types";
 
@@ -62,7 +63,7 @@ export function Dashboard() {
         addLogEntry({
           timestamp: Math.floor(Date.now() / 1000),
           level: "info",
-          message: `WS: ${trade.side} ${trade.size.toFixed(2)} ${trade.outcome} @ ${trade.price.toFixed(3)} — ${trade.title}`,
+          message: `WS: ${trade.side} ${formatUSD(trade.size)} ${trade.outcome} @ ${formatPrice(trade.price)} — ${trade.title}`,
           source: "WS",
         });
 

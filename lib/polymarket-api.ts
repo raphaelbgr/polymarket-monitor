@@ -1,4 +1,4 @@
-import { RawTrade, RawPosition, Trade, Position } from "./types";
+import { RawTrade, RawPosition, Trade, Position, LeaderboardData, PortfolioValue } from "./types";
 
 export function parseTrade(raw: RawTrade, source: "WS" | "POLL"): Trade {
   return {
@@ -29,6 +29,13 @@ export function parsePosition(raw: RawPosition): Position {
     unrealizedPnl: (curPrice - avgPrice) * size,
     marketValue: curPrice * size,
     asset: raw.asset,
+    redeemable: raw.redeemable ?? false,
+    endDate: raw.endDate ?? "",
+    cashPnl: parseFloat(raw.cashPnl ?? "0"),
+    realizedPnl: parseFloat(raw.realizedPnl ?? "0"),
+    slug: raw.slug ?? "",
+    icon: raw.icon ?? "",
+    eventSlug: raw.eventSlug ?? "",
   };
 }
 
@@ -56,4 +63,29 @@ export async function fetchMidpoint(tokenId: string): Promise<string> {
   if (!res.ok) throw new Error(`Midpoint fetch failed: ${res.status}`);
   const data = await res.json();
   return data.mid;
+}
+
+export async function fetchLeaderboard(address: string): Promise<LeaderboardData | null> {
+  const res = await fetch(`/api/leaderboard?address=${address}`);
+  if (!res.ok) return null;
+  const data = await res.json();
+  // API returns an array; take first entry
+  const entry = Array.isArray(data) ? data[0] : data;
+  if (!entry) return null;
+  return {
+    rank: entry.rank ?? 0,
+    userName: entry.userName ?? "",
+    vol: parseFloat(entry.vol ?? "0"),
+    pnl: parseFloat(entry.pnl ?? "0"),
+    profileImage: entry.profileImage ?? "",
+    xUsername: entry.xUsername ?? "",
+    verifiedBadge: entry.verifiedBadge ?? false,
+  };
+}
+
+export async function fetchPortfolioValue(address: string): Promise<number> {
+  const res = await fetch(`/api/portfolio-value?address=${address}`);
+  if (!res.ok) return 0;
+  const data = await res.json();
+  return parseFloat(data.value ?? "0");
 }

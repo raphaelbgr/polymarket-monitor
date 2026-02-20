@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { useSystemStore } from "@/lib/stores/system-store";
+import { formatUSD } from "@/lib/format";
 
 function RelativeTime({ timestamp }: { timestamp: number }) {
   const [now, setNow] = useState(() => Date.now());
@@ -106,7 +107,7 @@ export function StatusBar() {
               : "text-neutral-300"
           }
         >
-          ${status.userBalance.toFixed(2)}
+          {formatUSD(status.userBalance)}
         </span>
       </div>
 

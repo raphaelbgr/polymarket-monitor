@@ -9,7 +9,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const url = `${DATA_API_BASE}/positions?user=${address}&sizeThreshold=0&limit=500&sortBy=CURRENT&sortDirection=DESC`;
+    const url = `${DATA_API_BASE}/value?user=${address}`;
     const res = await fetch(url, {
       headers: { Accept: "application/json" },
       next: { revalidate: 0 },

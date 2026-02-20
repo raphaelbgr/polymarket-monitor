@@ -2,10 +2,14 @@
 
 import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { useTradeStore } from "@/lib/stores/trade-store";
+import { useShallow } from "zustand/react/shallow";
+import { formatTimeWithAge, formatUSD, formatPrice } from "@/lib/format";
 import type { Trade } from "@/lib/types";
 
-function RelativeAge({ timestamp }: { timestamp: number }) {
+function ExactTime({ timestamp }: { timestamp: number }) {
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
@@ -13,12 +17,7 @@ function RelativeAge({ timestamp }: { timestamp: number }) {
     return () => clearInterval(interval);
   }, []);
 
-  const diffMs = now - timestamp * 1000;
-  const diffS = Math.max(0, Math.floor(diffMs / 1000));
-
-  if (diffS < 60) return <span>{diffS}s ago</span>;
-  if (diffS < 3600) return <span>{Math.floor(diffS / 60)}m ago</span>;
-  return <span>{Math.floor(diffS / 3600)}h ago</span>;
+  return <span>{formatTimeWithAge(timestamp, now)}</span>;
 }
 
 const sourceBadgeColors: Record<string, string> = {
@@ -27,7 +26,10 @@ const sourceBadgeColors: Record<string, string> = {
 };
 
 export function TradesFeed({ address }: { address: string }) {
-  const trades = useTradeStore((s) => s.getTradesForWallet(address));
+  const trades = useTradeStore(
+    useShallow((s) => s.tradesByWallet[address.toLowerCase()] ?? [])
+  );
+  const [expanded, setExpanded] = useState(false);
 
   if (trades.length === 0) {
     return (
@@ -37,51 +39,79 @@ export function TradesFeed({ address }: { address: string }) {
     );
   }
 
-  const visible = trades.slice(0, 15);
+  const visible = expanded ? trades : trades.slice(0, 25);
+
+  const tradeRows = (
+    <div className="space-y-1">
+      {visible.map((trade: Trade) => (
+        <div
+          key={trade.transactionHash}
+          className="flex items-center gap-2 text-xs"
+        >
+          <Badge
+            variant="outline"
+            className={`shrink-0 text-[10px] px-1.5 py-0 ${
+              sourceBadgeColors[trade.source] || sourceBadgeColors.POLL
+            }`}
+          >
+            {trade.source}
+          </Badge>
+          <span
+            className={`shrink-0 font-medium ${
+              trade.side === "BUY"
+                ? "text-emerald-400"
+                : "text-red-400"
+            }`}
+          >
+            {trade.side}
+          </span>
+          <span className="text-neutral-400 shrink-0">
+            {trade.outcome}
+          </span>
+          <span className="text-neutral-300 shrink-0">
+            {formatUSD(trade.size)} @ {formatPrice(trade.price)}
+          </span>
+          <span className="text-neutral-500 truncate min-w-0">
+            {trade.title}
+          </span>
+          <span className="text-neutral-500 shrink-0 ml-auto font-mono">
+            <ExactTime timestamp={trade.timestamp} />
+          </span>
+        </div>
+      ))}
+    </div>
+  );
 
   return (
     <div className="space-y-1">
-      <div className="text-xs font-medium text-neutral-400 mb-1">
-        Trades ({trades.length})
-      </div>
-      <div className="space-y-1">
-        {visible.map((trade: Trade) => (
-          <div
-            key={trade.transactionHash}
-            className="flex items-center gap-2 text-xs"
+      <div className="flex items-center justify-between mb-1">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-medium text-neutral-400">
+            Trades ({trades.length})
+          </span>
+          <Badge
+            variant="outline"
+            className="text-[9px] px-1 py-0 border-blue-500/20 bg-blue-500/5 text-blue-400/70"
           >
-            <Badge
-              variant="outline"
-              className={`shrink-0 text-[10px] px-1.5 py-0 ${
-                sourceBadgeColors[trade.source] || sourceBadgeColors.POLL
-              }`}
-            >
-              {trade.source}
-            </Badge>
-            <span
-              className={`shrink-0 font-medium ${
-                trade.side === "BUY"
-                  ? "text-emerald-400"
-                  : "text-red-400"
-              }`}
-            >
-              {trade.side}
-            </span>
-            <span className="text-neutral-400 shrink-0">
-              {trade.outcome}
-            </span>
-            <span className="text-neutral-300 shrink-0">
-              {trade.size.toFixed(2)} @ {trade.price.toFixed(3)}
-            </span>
-            <span className="text-neutral-500 truncate min-w-0">
-              {trade.title}
-            </span>
-            <span className="text-neutral-500 shrink-0 ml-auto">
-              <RelativeAge timestamp={trade.timestamp} />
-            </span>
-          </div>
-        ))}
+            RTDS + Data API
+          </Badge>
+        </div>
+        {trades.length > 25 && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-[10px] h-5 px-2 text-neutral-500 hover:text-neutral-300"
+            onClick={() => setExpanded(!expanded)}
+          >
+            {expanded ? "Show less" : `Show all (${trades.length})`}
+          </Button>
+        )}
       </div>
+      {expanded ? (
+        <ScrollArea className="max-h-[400px]">{tradeRows}</ScrollArea>
+      ) : (
+        tradeRows
+      )}
     </div>
   );
 }

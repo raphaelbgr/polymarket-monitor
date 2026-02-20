@@ -3,6 +3,7 @@
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { useWalletStore } from "@/lib/stores/wallet-store";
+import { formatUSD } from "@/lib/format";
 import type { TrackedWallet } from "@/lib/types";
 
 export function CopyTradeToggle({ wallet }: { wallet: TrackedWallet }) {
@@ -32,8 +33,8 @@ export function CopyTradeToggle({ wallet }: { wallet: TrackedWallet }) {
       )}
       {wallet.copyTradeEnabled && (
         <span className="text-[10px] text-neutral-500">
-          {wallet.copyTradeConfig.multiplier}x / max $
-          {wallet.copyTradeConfig.maxSingleTrade.toFixed(2)}
+          {wallet.copyTradeConfig.multiplier}x / max{" "}
+          {formatUSD(wallet.copyTradeConfig.maxSingleTrade)}
         </span>
       )}
     </div>

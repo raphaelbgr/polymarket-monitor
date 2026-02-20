@@ -35,6 +35,13 @@ export interface Position {
   unrealizedPnl: number;
   marketValue: number;
   asset: string;
+  redeemable: boolean;
+  endDate: string;
+  cashPnl: number;
+  realizedPnl: number;
+  slug: string;
+  icon: string;
+  eventSlug: string;
 }
 
 export interface OrderStatus {
@@ -91,4 +98,30 @@ export interface RawPosition {
   curPrice: string;
   asset: string;
   proxyWallet: string;
+  redeemable?: boolean;
+  endDate?: string;
+  cashPnl?: string;
+  percentPnl?: string;
+  realizedPnl?: string;
+  initialValue?: string;
+  currentValue?: string;
+  totalBought?: string;
+  slug?: string;
+  icon?: string;
+  eventSlug?: string;
+}
+
+export interface LeaderboardData {
+  rank: number;
+  userName: string;
+  vol: number;
+  pnl: number;
+  profileImage: string;
+  xUsername: string;
+  verifiedBadge: boolean;
+}
+
+export interface PortfolioValue {
+  user: string;
+  value: number;
 }
