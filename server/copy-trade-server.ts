@@ -1,9 +1,10 @@
 /**
- * Polymarket Copy-Trade Server
+ * Polymarket Copy-Trade + API Server
  *
- * Standalone Node.js server that receives trade signals from the whale-tracker
- * dashboard via WebSocket and executes copy-trades on Polymarket using the
- * CLOB client.
+ * Standalone Node.js server that:
+ * 1. Receives trade signals via WebSocket (port 8765) and executes copy-trades
+ * 2. Serves a REST API (port 8766) for filtered trades, positions, tags, presets
+ * 3. Runs an RTDS client for server-side trade caching
  *
  * Runs as a separate process from the Next.js dashboard because it needs:
  * - A private key for signing orders
@@ -12,11 +13,20 @@
  */
 
 import "dotenv/config";
+import http from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import { ethers } from "ethers";
 import { ClobClient, Chain, Side, OrderType } from "@polymarket/clob-client";
 import type { TickSize } from "@polymarket/clob-client/dist/types.js";
 import { SignatureType } from "@polymarket/order-utils";
+import express from "express";
+
+import { TradeCache } from "./trade-cache";
+import { TagStore } from "./tag-store";
+import { PresetStore } from "./preset-store";
+import { ServerRtdsClient } from "./rtds-client";
+import { createApiRouter } from "./api-router";
+import { authMiddleware } from "./auth-middleware";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -95,6 +105,7 @@ const PROXY_ADDRESS = process.env.PROXY_ADDRESS ?? "";
 const SIGNATURE_TYPE_RAW = parseInt(process.env.SIGNATURE_TYPE ?? "0", 10);
 
 const WS_PORT = 8765;
+const HTTP_PORT = 8766;
 const CLOB_HOST = "https://clob.polymarket.com";
 const POLYGON_RPC = "https://polygon-rpc.com";
 const USDC_E_ADDRESS = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174";
@@ -120,6 +131,13 @@ let balanceTimerId: ReturnType<typeof setInterval> | null = null;
 let circuitTimerId: ReturnType<typeof setInterval> | null = null;
 
 const clients = new Set<WebSocket>();
+
+// Shared state for API
+const tradeCache = new TradeCache();
+const tagStore = new TagStore();
+const presetStore = new PresetStore();
+const orderHistory: Array<Record<string, unknown>> = [];
+const trackedWallets: Array<{ address: string; label: string }> = [];
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -164,6 +182,18 @@ function log(level: "INFO" | "WARN" | "ERROR", msg: string): void {
     console.log(`${prefix} ${msg}`);
   }
 }
+
+// ---------------------------------------------------------------------------
+// RTDS client (server-side trade stream)
+// ---------------------------------------------------------------------------
+
+const rtdsClient = new ServerRtdsClient({
+  tradeCache,
+  onTrade: (trade) => {
+    log("INFO", `RTDS trade cached: ${trade.title} ${trade.side} ${trade.size}@${trade.price}`);
+  },
+  log,
+});
 
 // ---------------------------------------------------------------------------
 // Balance check (raw Polygon RPC, no viem dependency)
@@ -256,7 +286,7 @@ function activateCircuitBreaker(): void {
 // Tick-size rounding
 // ---------------------------------------------------------------------------
 
-function roundToTick(price: number, tickSize: number, direction: "down"): number {
+function roundToTick(price: number, tickSize: number, _direction: "down"): number {
   const ticks = Math.floor(price / tickSize);
   return parseFloat((ticks * tickSize).toFixed(4));
 }
@@ -277,12 +307,25 @@ async function executeCopyTrade(
 
   const tradeExtra: Partial<StatusMessage> = { walletLabel: trade.walletLabel, trade };
 
+  // Record in order history
+  const historyEntry: Record<string, unknown> = {
+    walletLabel: trade.walletLabel,
+    trade,
+    config,
+    timestamp: now(),
+    status: "DETECTED",
+  };
+  orderHistory.unshift(historyEntry);
+  if (orderHistory.length > 200) orderHistory.length = 200;
+
   // -- DETECTED --
   broadcast(statusMsg("DETECTED", `${label} — ${trade.side} ${trade.size}@${trade.price}`, tradeExtra));
   log("INFO", `Trade detected: ${label} ${trade.side} ${trade.size}@${trade.price}`);
 
   // -- Engine paused? --
   if (enginePaused) {
+    historyEntry.status = "SKIPPED";
+    historyEntry.reason = "circuit_breaker";
     broadcast(
       statusMsg("SKIPPED", `${label} — engine paused (circuit breaker)`, {
         reason: "circuit_breaker",
@@ -298,6 +341,8 @@ async function executeCopyTrade(
 
   // 1. Only BUY
   if (trade.side !== "BUY") {
+    historyEntry.status = "SKIPPED";
+    historyEntry.reason = "sell_trade";
     broadcast(
       statusMsg("SKIPPED", `${label} — only BUY trades are copied`, {
         reason: "sell_trade",
@@ -311,6 +356,8 @@ async function executeCopyTrade(
   // 2. Freshness
   const age = now() - trade.timestamp;
   if (age > MAX_TRADE_AGE_S) {
+    historyEntry.status = "SKIPPED";
+    historyEntry.reason = "stale";
     broadcast(
       statusMsg("SKIPPED", `${label} — trade is ${age}s old (max ${MAX_TRADE_AGE_S}s)`, {
         reason: "stale",
@@ -322,6 +369,8 @@ async function executeCopyTrade(
   }
 
   if (!clobClient) {
+    historyEntry.status = "FAILED";
+    historyEntry.error = "no_client";
     broadcast(statusMsg("FAILED", `${label} — CLOB client not initialized`, { error: "no_client", ...tradeExtra }));
     log("ERROR", "CLOB client not initialized");
     return;
@@ -332,6 +381,8 @@ async function executeCopyTrade(
   try {
     market = await clobClient.getMarket(trade.conditionId);
   } catch (err) {
+    historyEntry.status = "FAILED";
+    historyEntry.error = (err as Error).message;
     broadcast(
       statusMsg("FAILED", `${label} — could not fetch market`, {
         error: (err as Error).message,
@@ -344,6 +395,8 @@ async function executeCopyTrade(
 
   // 4. Market accepting orders?
   if (!market.accepting_orders) {
+    historyEntry.status = "SKIPPED";
+    historyEntry.reason = "market_closed";
     broadcast(
       statusMsg("SKIPPED", `${label} — market not accepting orders`, {
         reason: "market_closed",
@@ -359,6 +412,8 @@ async function executeCopyTrade(
     .find((t) => t.outcome.toLowerCase() === trade.outcome.toLowerCase());
 
   if (!token) {
+    historyEntry.status = "FAILED";
+    historyEntry.error = "outcome_not_found";
     broadcast(
       statusMsg("FAILED", `${label} — outcome "${trade.outcome}" not found in market`, {
         error: "outcome_not_found",
@@ -375,6 +430,8 @@ async function executeCopyTrade(
     const midResp = await clobClient.getMidpoint(token.token_id);
     midpointValue = parseFloat((midResp as { mid: string }).mid);
   } catch (err) {
+    historyEntry.status = "FAILED";
+    historyEntry.error = (err as Error).message;
     broadcast(
       statusMsg("FAILED", `${label} — could not fetch midpoint`, {
         error: (err as Error).message,
@@ -386,6 +443,8 @@ async function executeCopyTrade(
   }
 
   if (midpointValue <= MIDPOINT_FLOOR || midpointValue >= MIDPOINT_CEILING) {
+    historyEntry.status = "SKIPPED";
+    historyEntry.reason = "resolved";
     broadcast(
       statusMsg("SKIPPED", `${label} — midpoint ${midpointValue} is near 0 or 1 (likely resolved)`, {
         reason: "resolved",
@@ -399,6 +458,8 @@ async function executeCopyTrade(
   // 7. Price drift check
   const drift = Math.abs(midpointValue - trade.price) / trade.price;
   if (drift > MAX_PRICE_DRIFT) {
+    historyEntry.status = "SKIPPED";
+    historyEntry.reason = "price_drift";
     broadcast(
       statusMsg(
         "SKIPPED",
@@ -452,6 +513,8 @@ async function executeCopyTrade(
 
   // Final sanity check
   if (orderSize <= 0 || orderPrice <= 0) {
+    historyEntry.status = "SKIPPED";
+    historyEntry.reason = "zero_order";
     broadcast(
       statusMsg("SKIPPED", `${label} — calculated size or price is zero`, {
         reason: "zero_order",
@@ -463,6 +526,8 @@ async function executeCopyTrade(
   }
 
   // -- PLACING --
+  historyEntry.orderSize = orderSize;
+  historyEntry.orderPrice = orderPrice;
   broadcast(
     statusMsg(
       "PLACING",
@@ -488,6 +553,8 @@ async function executeCopyTrade(
     );
 
     if (resp.success) {
+      historyEntry.status = "FILLED";
+      historyEntry.orderId = resp.orderID ?? null;
       broadcast(
         statusMsg("FILLED", `${label} — order placed: ${orderSize}@${orderPrice}`, {
           orderId: resp.orderID ?? null,
@@ -499,6 +566,8 @@ async function executeCopyTrade(
       const errMsg = (resp as Record<string, unknown>).status
         ? String((resp as Record<string, unknown>).status)
         : "unknown error";
+      historyEntry.status = "FAILED";
+      historyEntry.error = errMsg;
       broadcast(
         statusMsg("FAILED", `${label} — order rejected: ${errMsg}`, {
           error: errMsg,
@@ -514,6 +583,8 @@ async function executeCopyTrade(
     }
   } catch (err) {
     const errMsg = (err as Error).message;
+    historyEntry.status = "FAILED";
+    historyEntry.error = errMsg;
     broadcast(
       statusMsg("FAILED", `${label} — order error: ${errMsg}`, {
         error: errMsg,
@@ -628,6 +699,16 @@ function handleMessage(ws: WebSocket, raw: string): void {
     return;
   }
 
+  // Track wallet label for API
+  if (trade.walletLabel) {
+    const existing = trackedWallets.find(
+      (w) => w.label === trade.walletLabel,
+    );
+    if (!existing) {
+      trackedWallets.push({ address: "", label: trade.walletLabel });
+    }
+  }
+
   // Fire and forget — don't block the WS handler
   executeCopyTrade(trade, config).catch((err) => {
     log("ERROR", `Unhandled error in executeCopyTrade: ${(err as Error).message}`);
@@ -635,16 +716,66 @@ function handleMessage(ws: WebSocket, raw: string): void {
 }
 
 // ---------------------------------------------------------------------------
+// Express HTTP server
+// ---------------------------------------------------------------------------
+
+function createHttpServer(): http.Server {
+  const app = express();
+
+  // Middleware
+  app.use(express.json());
+
+  // Auth (Bearer token — disabled if WS_AUTH_TOKEN not set)
+  app.use("/api/v1", authMiddleware);
+
+  // CORS for browser access
+  app.use((_req, res, next) => {
+    res.header("Access-Control-Allow-Origin", "*");
+    res.header("Access-Control-Allow-Methods", "GET, PUT, DELETE, OPTIONS");
+    res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+    if (_req.method === "OPTIONS") {
+      res.sendStatus(204);
+      return;
+    }
+    next();
+  });
+
+  // API router
+  const apiRouter = createApiRouter({
+    tradeCache,
+    tagStore,
+    presetStore,
+    rtdsClient,
+    getTrackedWallets: () => trackedWallets,
+    getEngineState: () => ({
+      paused: enginePaused,
+      balance: lastBalance,
+      walletAddress,
+    }),
+    getOrderHistory: () => orderHistory,
+  });
+
+  app.use("/api/v1", apiRouter);
+
+  // Health check
+  app.get("/health", (_req, res) => {
+    res.json({ ok: true, uptime: process.uptime() });
+  });
+
+  return http.createServer(app);
+}
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
 async function main(): Promise<void> {
-  log("INFO", "=== Polymarket Copy-Trade Server ===");
+  log("INFO", "=== Polymarket Copy-Trade + API Server ===");
 
   // Initialize CLOB client (non-blocking if no key)
   await initClobClient();
 
-  // Start WebSocket server
+  // Start WebSocket server (copy-trade protocol)
   const wss = new WebSocketServer({ port: WS_PORT });
 
   wss.on("listening", () => {
@@ -709,6 +840,17 @@ async function main(): Promise<void> {
     });
   });
 
+  // Start HTTP API server
+  const httpServer = createHttpServer();
+  httpServer.listen(HTTP_PORT, () => {
+    log("INFO", `HTTP API server listening on http://localhost:${HTTP_PORT}`);
+    log("INFO", `API base: http://localhost:${HTTP_PORT}/api/v1`);
+  });
+
+  // Start RTDS client for server-side trade caching
+  rtdsClient.connect();
+  log("INFO", "RTDS client started for server-side trade caching");
+
   // Start balance polling (every 30s) if we have a wallet
   if (walletAddress && !enginePaused) {
     balanceTimerId = setInterval(broadcastBalance, BALANCE_POLL_INTERVAL_MS);
@@ -721,13 +863,19 @@ async function main(): Promise<void> {
     if (balanceTimerId) clearInterval(balanceTimerId);
     if (circuitTimerId) clearInterval(circuitTimerId);
 
+    rtdsClient.disconnect();
+
     for (const ws of clients) {
       ws.close(1001, "Server shutting down");
     }
     clients.clear();
 
+    httpServer.close(() => {
+      log("INFO", "HTTP server stopped");
+    });
+
     wss.close(() => {
-      log("INFO", "Server stopped");
+      log("INFO", "WebSocket server stopped");
       process.exit(0);
     });
   };

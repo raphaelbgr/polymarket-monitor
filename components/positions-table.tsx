@@ -7,9 +7,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { PositionDetailDialog } from "@/components/entry-detail-dialog";
+import { PositionFilterBar } from "@/components/filter-bar";
 import { fetchPositions, parsePosition } from "@/lib/polymarket-api";
 import { formatNumber, formatPrice, formatUSD, positionStatus } from "@/lib/format";
 import { POLL_INTERVAL_POSITIONS } from "@/lib/constants";
+import { useFilterStore } from "@/lib/stores/filter-store";
+import { filterPositions } from "@/lib/shared/filters";
 import type { Position } from "@/lib/types";
 
 function polymarketUrl(pos: Position): string | null {
@@ -24,8 +27,9 @@ export function PositionsTable({ address }: { address: string }) {
     position: Position;
     snapshotAt: number;
   } | null>(null);
+  const positionFilter = useFilterStore((s) => s.getPositionFilter(address));
 
-  const { data: positions } = useQuery({
+  const { data: allPositions } = useQuery({
     queryKey: ["positions", address],
     queryFn: async () => {
       const raw = await fetchPositions(address);
@@ -37,10 +41,19 @@ export function PositionsTable({ address }: { address: string }) {
     refetchInterval: POLL_INTERVAL_POSITIONS,
   });
 
+  // Apply filters
+  const positions = useMemo(
+    () =>
+      allPositions
+        ? filterPositions(allPositions, positionFilter)
+        : undefined,
+    [allPositions, positionFilter],
+  );
+
   const isStale = useMemo(() => {
-    if (!snapshot || !positions) return false;
+    if (!snapshot || !allPositions) return false;
     const key = `${snapshot.position.conditionId}-${snapshot.position.outcome}`;
-    const live = positions.find((p) => `${p.conditionId}-${p.outcome}` === key);
+    const live = allPositions.find((p) => `${p.conditionId}-${p.outcome}` === key);
     if (!live) return true;
     return (
       live.size !== snapshot.position.size ||
@@ -48,17 +61,28 @@ export function PositionsTable({ address }: { address: string }) {
       live.marketValue !== snapshot.position.marketValue ||
       live.unrealizedPnl !== snapshot.position.unrealizedPnl
     );
-  }, [snapshot, positions]);
+  }, [snapshot, allPositions]);
 
-  if (!positions || positions.length === 0) {
+  if (!allPositions || allPositions.length === 0) {
     return (
-      <div className="text-xs text-neutral-500 py-2">
-        No open positions
+      <div className="space-y-1">
+        <div className="flex items-center gap-2 mb-1">
+          <span className="text-xs font-medium text-neutral-400">
+            Positions (0)
+          </span>
+        </div>
+        <div className="text-xs text-neutral-500 py-2">
+          No open positions
+        </div>
       </div>
     );
   }
 
-  const visible = expanded ? positions : positions.slice(0, 10);
+  const filteredCount = positions?.length ?? 0;
+  const totalCount = allPositions.length;
+  const visible = expanded
+    ? (positions ?? [])
+    : (positions ?? []).slice(0, 10);
 
   const positionRows = (
     <div className="space-y-1">
@@ -124,7 +148,7 @@ export function PositionsTable({ address }: { address: string }) {
         <div className="flex items-center justify-between mb-1">
           <div className="flex items-center gap-2">
             <span className="text-xs font-medium text-neutral-400">
-              Positions ({positions.length})
+              Positions ({filteredCount}{filteredCount !== totalCount ? `/${totalCount}` : ""})
             </span>
             <Badge
               variant="outline"
@@ -133,17 +157,18 @@ export function PositionsTable({ address }: { address: string }) {
               Data API
             </Badge>
           </div>
-          {positions.length > 10 && (
+          {filteredCount > 10 && (
             <Button
               variant="ghost"
               size="sm"
               className="text-[10px] h-5 px-2 text-neutral-500 hover:text-neutral-300"
               onClick={() => setExpanded(!expanded)}
             >
-              {expanded ? "Show less" : `Show all (${positions.length})`}
+              {expanded ? "Show less" : `Show all (${filteredCount})`}
             </Button>
           )}
         </div>
+        <PositionFilterBar address={address} />
         {expanded ? (
           <ScrollArea className="max-h-[70vh]">{positionRows}</ScrollArea>
         ) : (

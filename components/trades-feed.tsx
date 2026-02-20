@@ -1,13 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { TradeDetailDialog } from "@/components/entry-detail-dialog";
+import { TradeFilterBar } from "@/components/filter-bar";
 import { useTradeStore } from "@/lib/stores/trade-store";
+import { useFilterStore } from "@/lib/stores/filter-store";
 import { useShallow } from "zustand/react/shallow";
 import { formatTimeWithAge, formatUSD, formatPrice } from "@/lib/format";
+import { filterTrades } from "@/lib/shared/filters";
 import type { Trade } from "@/lib/types";
 
 function ExactTime({ timestamp }: { timestamp: number }) {
@@ -30,21 +33,35 @@ export function TradesFeed({ address }: { address: string }) {
   const trades = useTradeStore(
     useShallow((s) => s.tradesByWallet[address.toLowerCase()] ?? [])
   );
+  const tradeFilter = useFilterStore((s) => s.getTradeFilter(address));
   const [expanded, setExpanded] = useState(false);
   const [snapshot, setSnapshot] = useState<{
     trade: Trade;
     snapshotAt: number;
   } | null>(null);
 
+  // Apply filters
+  const filtered = useMemo(
+    () => filterTrades(trades, tradeFilter),
+    [trades, tradeFilter],
+  );
+
   if (trades.length === 0) {
     return (
-      <div className="text-xs text-neutral-500 py-2">
-        Waiting for trades...
+      <div className="space-y-1">
+        <div className="flex items-center gap-2 mb-1">
+          <span className="text-xs font-medium text-neutral-400">
+            Trades (0)
+          </span>
+        </div>
+        <div className="text-xs text-neutral-500 py-2">
+          Waiting for trades...
+        </div>
       </div>
     );
   }
 
-  const visible = expanded ? trades : trades.slice(0, 25);
+  const visible = expanded ? filtered : filtered.slice(0, 25);
 
   const tradeRows = (
     <div className="space-y-1">
@@ -94,7 +111,7 @@ export function TradesFeed({ address }: { address: string }) {
         <div className="flex items-center justify-between mb-1">
           <div className="flex items-center gap-2">
             <span className="text-xs font-medium text-neutral-400">
-              Trades ({trades.length})
+              Trades ({filtered.length}{filtered.length !== trades.length ? `/${trades.length}` : ""})
             </span>
             <Badge
               variant="outline"
@@ -103,17 +120,18 @@ export function TradesFeed({ address }: { address: string }) {
               RTDS + Data API
             </Badge>
           </div>
-          {trades.length > 25 && (
+          {filtered.length > 25 && (
             <Button
               variant="ghost"
               size="sm"
               className="text-[10px] h-5 px-2 text-neutral-500 hover:text-neutral-300"
               onClick={() => setExpanded(!expanded)}
             >
-              {expanded ? "Show less" : `Show all (${trades.length})`}
+              {expanded ? "Show less" : `Show all (${filtered.length})`}
             </Button>
           )}
         </div>
+        <TradeFilterBar address={address} />
         {expanded ? (
           <ScrollArea className="max-h-[70vh]">{tradeRows}</ScrollArea>
         ) : (

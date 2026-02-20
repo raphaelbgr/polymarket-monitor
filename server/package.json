@@ -8,11 +8,14 @@
   },
   "dependencies": {
     "@polymarket/clob-client": "^5.2.3",
+    "@polymarket/real-time-data-client": "^1.4.0",
     "ethers": "^5.7.2",
+    "express": "^5.1.0",
     "ws": "^8.18.0",
     "dotenv": "^16.4.0"
   },
   "devDependencies": {
+    "@types/express": "^5.0.2",
     "@types/ws": "^8.5.10",
     "tsx": "^4.0.0",
     "typescript": "^5.0.0"
