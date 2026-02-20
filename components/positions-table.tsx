@@ -6,6 +6,7 @@ import { ExternalLink } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { PositionDetailDialog } from "@/components/entry-detail-dialog";
 import { fetchPositions, parsePosition } from "@/lib/polymarket-api";
 import { formatNumber, formatPrice, formatUSD } from "@/lib/format";
 import { POLL_INTERVAL_POSITIONS } from "@/lib/constants";
@@ -19,6 +20,7 @@ function polymarketUrl(pos: Position): string | null {
 
 export function PositionsTable({ address }: { address: string }) {
   const [expanded, setExpanded] = useState(false);
+  const [selectedPosition, setSelectedPosition] = useState<Position | null>(null);
 
   const { data: positions } = useQuery({
     queryKey: ["positions", address],
@@ -49,7 +51,8 @@ export function PositionsTable({ address }: { address: string }) {
         return (
           <div
             key={`${pos.conditionId}-${pos.outcome}`}
-            className="flex items-center justify-between gap-2 text-xs"
+            className="flex items-center justify-between gap-2 text-xs cursor-pointer hover:bg-neutral-800/50 rounded px-1 -mx-1 py-0.5"
+            onClick={() => setSelectedPosition(pos)}
           >
             <div className="flex items-center gap-1.5 min-w-0">
               <Badge
@@ -75,6 +78,7 @@ export function PositionsTable({ address }: { address: string }) {
                   rel="noopener noreferrer"
                   className="shrink-0 text-neutral-600 hover:text-blue-400 transition-colors"
                   title="Open on Polymarket"
+                  onClick={(e) => e.stopPropagation()}
                 >
                   <ExternalLink className="size-3" />
                 </a>
@@ -102,35 +106,46 @@ export function PositionsTable({ address }: { address: string }) {
   );
 
   return (
-    <div className="space-y-1">
-      <div className="flex items-center justify-between mb-1">
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-medium text-neutral-400">
-            Positions ({positions.length})
-          </span>
-          <Badge
-            variant="outline"
-            className="text-[9px] px-1 py-0 border-purple-500/20 bg-purple-500/5 text-purple-400/70"
-          >
-            Data API
-          </Badge>
+    <>
+      <div className="space-y-1">
+        <div className="flex items-center justify-between mb-1">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium text-neutral-400">
+              Positions ({positions.length})
+            </span>
+            <Badge
+              variant="outline"
+              className="text-[9px] px-1 py-0 border-purple-500/20 bg-purple-500/5 text-purple-400/70"
+            >
+              Data API
+            </Badge>
+          </div>
+          {positions.length > 10 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-[10px] h-5 px-2 text-neutral-500 hover:text-neutral-300"
+              onClick={() => setExpanded(!expanded)}
+            >
+              {expanded ? "Show less" : `Show all (${positions.length})`}
+            </Button>
+          )}
         </div>
-        {positions.length > 10 && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="text-[10px] h-5 px-2 text-neutral-500 hover:text-neutral-300"
-            onClick={() => setExpanded(!expanded)}
-          >
-            {expanded ? "Show less" : `Show all (${positions.length})`}
-          </Button>
+        {expanded ? (
+          <ScrollArea className="max-h-[70vh]">{positionRows}</ScrollArea>
+        ) : (
+          positionRows
         )}
       </div>
-      {expanded ? (
-        <ScrollArea className="max-h-[400px]">{positionRows}</ScrollArea>
-      ) : (
-        positionRows
+      {selectedPosition && (
+        <PositionDetailDialog
+          position={selectedPosition}
+          open={!!selectedPosition}
+          onOpenChange={(open) => {
+            if (!open) setSelectedPosition(null);
+          }}
+        />
       )}
-    </div>
+    </>
   );
 }

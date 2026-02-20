@@ -39,6 +39,10 @@ export interface Position {
   endDate: string;
   cashPnl: number;
   realizedPnl: number;
+  initialValue: number;
+  currentValue: number;
+  totalBought: number;
+  percentPnl: number;
   slug: string;
   icon: string;
   eventSlug: string;

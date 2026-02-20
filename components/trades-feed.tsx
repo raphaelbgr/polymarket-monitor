@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { TradeDetailDialog } from "@/components/entry-detail-dialog";
 import { useTradeStore } from "@/lib/stores/trade-store";
 import { useShallow } from "zustand/react/shallow";
 import { formatTimeWithAge, formatUSD, formatPrice } from "@/lib/format";
@@ -30,6 +31,7 @@ export function TradesFeed({ address }: { address: string }) {
     useShallow((s) => s.tradesByWallet[address.toLowerCase()] ?? [])
   );
   const [expanded, setExpanded] = useState(false);
+  const [selectedTrade, setSelectedTrade] = useState<Trade | null>(null);
 
   if (trades.length === 0) {
     return (
@@ -46,7 +48,8 @@ export function TradesFeed({ address }: { address: string }) {
       {visible.map((trade: Trade) => (
         <div
           key={trade.transactionHash}
-          className="flex items-center gap-2 text-xs"
+          className="flex items-center gap-2 text-xs cursor-pointer hover:bg-neutral-800/50 rounded px-1 -mx-1 py-0.5"
+          onClick={() => setSelectedTrade(trade)}
         >
           <Badge
             variant="outline"
@@ -83,35 +86,46 @@ export function TradesFeed({ address }: { address: string }) {
   );
 
   return (
-    <div className="space-y-1">
-      <div className="flex items-center justify-between mb-1">
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-medium text-neutral-400">
-            Trades ({trades.length})
-          </span>
-          <Badge
-            variant="outline"
-            className="text-[9px] px-1 py-0 border-blue-500/20 bg-blue-500/5 text-blue-400/70"
-          >
-            RTDS + Data API
-          </Badge>
+    <>
+      <div className="space-y-1">
+        <div className="flex items-center justify-between mb-1">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium text-neutral-400">
+              Trades ({trades.length})
+            </span>
+            <Badge
+              variant="outline"
+              className="text-[9px] px-1 py-0 border-blue-500/20 bg-blue-500/5 text-blue-400/70"
+            >
+              RTDS + Data API
+            </Badge>
+          </div>
+          {trades.length > 25 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-[10px] h-5 px-2 text-neutral-500 hover:text-neutral-300"
+              onClick={() => setExpanded(!expanded)}
+            >
+              {expanded ? "Show less" : `Show all (${trades.length})`}
+            </Button>
+          )}
         </div>
-        {trades.length > 25 && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="text-[10px] h-5 px-2 text-neutral-500 hover:text-neutral-300"
-            onClick={() => setExpanded(!expanded)}
-          >
-            {expanded ? "Show less" : `Show all (${trades.length})`}
-          </Button>
+        {expanded ? (
+          <ScrollArea className="max-h-[70vh]">{tradeRows}</ScrollArea>
+        ) : (
+          tradeRows
         )}
       </div>
-      {expanded ? (
-        <ScrollArea className="max-h-[400px]">{tradeRows}</ScrollArea>
-      ) : (
-        tradeRows
+      {selectedTrade && (
+        <TradeDetailDialog
+          trade={selectedTrade}
+          open={!!selectedTrade}
+          onOpenChange={(open) => {
+            if (!open) setSelectedTrade(null);
+          }}
+        />
       )}
-    </div>
+    </>
   );
 }
