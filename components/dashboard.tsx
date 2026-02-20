@@ -13,6 +13,11 @@ import {
   disconnectWebSocket,
   setTrackedAddresses,
 } from "@/lib/ws-client";
+import {
+  connectCopyTradeServer,
+  sendCopyTradeRequest,
+  disconnectCopyTradeServer,
+} from "@/lib/copy-trade-client";
 import { fetchTrades, parseTrade } from "@/lib/polymarket-api";
 import { POLL_INTERVAL_TRADES } from "@/lib/constants";
 import type { RawTrade } from "@/lib/types";
@@ -26,6 +31,10 @@ export function Dashboard() {
   const setWsLastMessage = useSystemStore((s) => s.setWsLastMessage);
   const setPollLastSuccess = useSystemStore((s) => s.setPollLastSuccess);
   const addLogEntry = useSystemStore((s) => s.addLogEntry);
+  const setCopyTradeEngine = useSystemStore((s) => s.setCopyTradeEngine);
+  const setUserBalance = useSystemStore((s) => s.setUserBalance);
+  const addOrderStatus = useSystemStore((s) => s.addOrderStatus);
+  const incrementOrders = useSystemStore((s) => s.incrementOrders);
 
   // Polling cursors: wallet address -> max timestamp seen
   const cursors = useRef<Record<string, number>>({});
@@ -56,6 +65,21 @@ export function Dashboard() {
           message: `WS: ${trade.side} ${trade.size.toFixed(2)} ${trade.outcome} @ ${trade.price.toFixed(3)} — ${trade.title}`,
           source: "WS",
         });
+
+        // Auto-send copy-trade request if enabled for this wallet
+        const currentWallets = useWalletStore.getState().wallets;
+        const wallet = currentWallets.find(
+          (w) => w.address === trade.walletAddress.toLowerCase()
+        );
+        if (wallet?.copyTradeEnabled) {
+          sendCopyTradeRequest(trade, wallet.label, wallet.copyTradeConfig);
+          addLogEntry({
+            timestamp: Math.floor(Date.now() / 1000),
+            level: "info",
+            message: `Copy-trade request sent for ${wallet.label}: ${trade.side} ${trade.outcome}`,
+            source: "COPY",
+          });
+        }
       }
     },
     [addTrade, setWsLastMessage, addLogEntry]
@@ -94,6 +118,61 @@ export function Dashboard() {
       disconnectWebSocket();
     };
   }, [initialized, handleWsTrade, handleWsStatus, addLogEntry]);
+
+  // Connect to copy-trade server
+  useEffect(() => {
+    if (!initialized) return;
+
+    connectCopyTradeServer((data) => {
+      if (data.type === "balance") {
+        setUserBalance(data.usdce);
+      } else if (data.type === "engine") {
+        setCopyTradeEngine(data.status, data.message);
+        addLogEntry({
+          timestamp: Math.floor(Date.now() / 1000),
+          level: data.status === "ACTIVE" ? "success" : "warn",
+          message: `Copy-trade engine: ${data.message}`,
+          source: "COPY",
+        });
+      } else if (data.type === "status") {
+        addOrderStatus({
+          orderId: data.orderId ?? null,
+          status: data.status,
+          message: data.message,
+          error: data.error,
+          reason: data.reason,
+          timestamp: data.timestamp ?? Math.floor(Date.now() / 1000),
+          walletLabel: data.walletLabel,
+          trade: data.trade,
+        });
+        addLogEntry({
+          timestamp: Math.floor(Date.now() / 1000),
+          level:
+            data.status === "FILLED"
+              ? "success"
+              : data.status === "FAILED"
+                ? "error"
+                : "info",
+          message: `Order ${data.status}: ${data.message}`,
+          source: "COPY",
+        });
+        if (data.status === "FILLED") incrementOrders("filled");
+        if (data.status === "FAILED") incrementOrders("failed");
+        if (data.status === "SKIPPED") incrementOrders("skipped");
+      }
+    });
+
+    return () => {
+      disconnectCopyTradeServer();
+    };
+  }, [
+    initialized,
+    setUserBalance,
+    setCopyTradeEngine,
+    addLogEntry,
+    addOrderStatus,
+    incrementOrders,
+  ]);
 
   // Polling fallback
   useEffect(() => {
