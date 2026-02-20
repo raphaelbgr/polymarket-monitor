@@ -29,6 +29,7 @@ import {
   formatPrice,
   formatTimeWithAge,
   positionStatus,
+  parseCloseTimeFromTitle,
 } from "@/lib/format";
 import type { TrackedWallet, Position, Trade } from "@/lib/types";
 
@@ -307,7 +308,7 @@ function PositionsTab({ positions }: { positions: Position[] }) {
             >
               <div className="flex items-center gap-1.5 min-w-0">
                 {(() => {
-                  const status = positionStatus(pos.redeemable, pos.curPrice);
+                  const status = positionStatus(pos.redeemable, pos.curPrice, parseCloseTimeFromTitle(pos.title) ?? undefined);
                   return (
                     <Badge
                       variant="outline"

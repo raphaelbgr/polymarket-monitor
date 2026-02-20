@@ -456,7 +456,7 @@ function StatusToggle({
   onChange: (val: string[]) => void;
 }) {
   const statuses = [
-    { value: "active", label: "Active", color: "blue" },
+    { value: "open", label: "Open", color: "blue" },
     { value: "won", label: "Won", color: "emerald" },
     { value: "lost", label: "Lost", color: "red" },
     { value: "resolving", label: "Resolving", color: "amber" },

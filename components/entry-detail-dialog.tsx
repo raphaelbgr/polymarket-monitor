@@ -9,7 +9,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { formatUSD, formatPrice, formatNumber, formatDateTime, formatTime, positionStatus } from "@/lib/format";
+import { formatUSD, formatPrice, formatNumber, formatDateTime, formatTime, positionStatus, parseCloseTimeFromTitle } from "@/lib/format";
+import { useMarketEndDate } from "@/lib/hooks/use-market-end-date";
 import type { Trade, Position } from "@/lib/types";
 
 function SnapshotInfo({ snapshotAt, isStale }: { snapshotAt?: number; isStale?: boolean }) {
@@ -70,6 +71,45 @@ function PnlField({ label, value }: { label: string; value: number }) {
       value={`${value >= 0 ? "+" : ""}${formatUSD(value)}`}
       className={value >= 0 ? "text-emerald-400" : "text-red-400"}
     />
+  );
+}
+
+// ── Market End Date (parsed from title) ──
+
+function MarketEndDateSection({ slug, title }: { slug?: string; title: string }) {
+  const { data: gammaEndDate } = useMarketEndDate(slug || undefined);
+
+  // Prefer Gamma API endDate, fall back to title parsing
+  const closeTime = gammaEndDate ?? parseCloseTimeFromTitle(title);
+  if (!closeTime) return null;
+
+  const end = new Date(closeTime).getTime();
+  if (isNaN(end)) return null;
+
+  const diff = end - Date.now();
+  const abs = Math.abs(diff);
+  const days = Math.floor(abs / 86400_000);
+  const hours = Math.floor((abs % 86400_000) / 3600_000);
+  const minutes = Math.floor((abs % 3600_000) / 60_000);
+  let timeStr: string;
+  if (days > 0) timeStr = `${days}d ${hours}h`;
+  else if (hours > 0) timeStr = `${hours}h ${minutes}m`;
+  else timeStr = `${minutes}m`;
+
+  const formatted = new Date(closeTime).toLocaleString(undefined, {
+    year: "numeric", month: "short", day: "numeric",
+    hour: "2-digit", minute: "2-digit", timeZoneName: "short",
+  });
+
+  return (
+    <div className="space-y-1.5 border-t border-neutral-800 pt-3">
+      <Field label="End Date" value={formatted} />
+      <Field
+        label={diff > 0 ? "Closes in" : "Closed"}
+        value={diff > 0 ? timeStr : `${timeStr} ago`}
+        className={diff > 0 ? (diff < 3600_000 ? "text-red-400" : diff < 86400_000 ? "text-amber-400" : "text-neutral-300") : "text-neutral-500"}
+      />
+    </div>
   );
 }
 
@@ -179,6 +219,11 @@ export function PositionDetailDialog({
   snapshotAt?: number;
   isStale?: boolean;
 }) {
+  const { data: gammaEndDate } = useMarketEndDate(position.slug || undefined);
+
+  // Gamma API endDate is most accurate; fall back to title parsing
+  const closeTime = gammaEndDate ?? parseCloseTimeFromTitle(position.title) ?? undefined;
+
   const polyUrl = position.eventSlug
     ? `https://polymarket.com/event/${position.eventSlug}`
     : position.slug
@@ -200,7 +245,7 @@ export function PositionDetailDialog({
             <p className="text-sm text-neutral-200 leading-tight break-words">{position.title}</p>
             <div className="flex items-center gap-2">
               {(() => {
-                const status = positionStatus(position.redeemable, position.curPrice);
+                const status = positionStatus(position.redeemable, position.curPrice, closeTime);
                 return (
                   <Badge
                     variant="outline"
@@ -250,11 +295,7 @@ export function PositionDetailDialog({
           </div>
 
           {/* Dates */}
-          {position.endDate && (
-            <div className="space-y-1.5 border-t border-neutral-800 pt-3">
-              <Field label="End Date" value={position.endDate} />
-            </div>
-          )}
+          <MarketEndDateSection slug={position.slug} title={position.title} />
 
           {/* IDs */}
           <div className="space-y-1.5 border-t border-neutral-800 pt-3">

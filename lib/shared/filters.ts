@@ -1,5 +1,6 @@
 import type { Trade, Position } from "./types";
 import { detectTags, type TagOverride, resolveTags } from "./tags";
+import { parseCloseTimeFromTitle } from "./format";
 
 // ---------------------------------------------------------------------------
 // Filter types
@@ -21,7 +22,7 @@ export interface TradeFilter {
 }
 
 export interface PositionFilter {
-  status?: string[];                 // "active" | "resolving" | "won" | "lost"
+  status?: string[];                 // "open" | "resolving" | "won" | "lost"
   minShares?: number;
   maxShares?: number;
   minValue?: number;
@@ -47,8 +48,15 @@ export interface FilterPreset {
 // Position status helper (matching format.ts logic without className)
 // ---------------------------------------------------------------------------
 
-function positionStatusLabel(redeemable: boolean, curPrice: number): string {
-  if (!redeemable) return "active";
+function positionStatusLabel(redeemable: boolean, curPrice: number, title: string): string {
+  if (!redeemable) {
+    const closeTime = parseCloseTimeFromTitle(title);
+    if (closeTime) {
+      const end = new Date(closeTime).getTime();
+      if (!isNaN(end) && end < Date.now()) return "resolving";
+    }
+    return "open";
+  }
   if (curPrice >= 0.95) return "won";
   if (curPrice <= 0.05) return "lost";
   return "resolving";
@@ -108,7 +116,7 @@ export function filterPositions(
 ): Position[] {
   return positions.filter((p) => {
     if (filter.status?.length) {
-      const label = positionStatusLabel(p.redeemable, p.curPrice);
+      const label = positionStatusLabel(p.redeemable, p.curPrice, p.title);
       if (!filter.status.includes(label)) return false;
     }
 
