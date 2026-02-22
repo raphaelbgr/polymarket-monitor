@@ -11,9 +11,12 @@ import { PositionFilterBar } from "@/components/filter-bar";
 import { fetchPositions, parsePosition } from "@/lib/polymarket-api";
 import { formatNumber, formatPrice, formatUSD, positionStatus, parseCloseTimeFromTitle } from "@/lib/format";
 import { POLL_INTERVAL_POSITIONS } from "@/lib/constants";
+import { usePositionSort, useFilterStore } from "@/lib/stores/filter-store";
 import { usePositionFilter } from "@/lib/stores/filter-store";
-import { filterPositions } from "@/lib/shared/filters";
-import { useMarketEndDate } from "@/lib/hooks/use-market-end-date";
+import { filterPositions, sortPositions } from "@/lib/shared/filters";
+import type { PositionSortField, SortDirection } from "@/lib/shared/filters";
+import { useMarketEndDates } from "@/lib/hooks/use-market-end-date";
+import { ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
 import type { Position } from "@/lib/types";
 
 function formatDuration(ms: number): string {
@@ -28,6 +31,41 @@ function formatDuration(ms: number): string {
   if (hours > 0) return `${hours}h ${minutes}m`;
   if (minutes > 0) return `${minutes}m ${seconds}s`;
   return `${seconds}s`;
+}
+
+function SortHeader({
+  label,
+  field,
+  activeField,
+  direction,
+  onSort,
+}: {
+  label: string;
+  field: string;
+  activeField: string;
+  direction: SortDirection;
+  onSort: (field: string) => void;
+}) {
+  const isActive = field === activeField;
+  return (
+    <button
+      onClick={() => onSort(field)}
+      className={`flex items-center gap-0.5 text-[10px] hover:text-neutral-200 transition-colors ${
+        isActive ? "text-neutral-200" : "text-neutral-500"
+      }`}
+    >
+      {label}
+      {isActive ? (
+        direction === "desc" ? (
+          <ArrowDown className="size-2.5" />
+        ) : (
+          <ArrowUp className="size-2.5" />
+        )
+      ) : (
+        <ArrowUpDown className="size-2.5 opacity-40" />
+      )}
+    </button>
+  );
 }
 
 function EndDateBadge({ endDate }: { endDate: string | null | undefined }) {
@@ -68,6 +106,26 @@ function EndDateBadge({ endDate }: { endDate: string | null | undefined }) {
   );
 }
 
+function outcomeBadgeStyle(outcome: string): string {
+  const lower = outcome.toLowerCase();
+  if (lower === "up" || lower === "yes")
+    return "border-emerald-500/30 bg-emerald-500/10 text-emerald-400";
+  if (lower === "down" || lower === "no")
+    return "border-red-500/30 bg-red-500/10 text-red-400";
+  return "border-neutral-500/30 bg-neutral-500/10 text-neutral-400";
+}
+
+function OutcomeBadge({ outcome }: { outcome: string }) {
+  return (
+    <Badge
+      variant="outline"
+      className={`shrink-0 text-[9px] px-1 py-0 ${outcomeBadgeStyle(outcome)}`}
+    >
+      {outcome}
+    </Badge>
+  );
+}
+
 function polymarketUrl(pos: Position): string | null {
   if (pos.eventSlug) return `https://polymarket.com/event/${pos.eventSlug}`;
   if (pos.slug) return `https://polymarket.com/event/${pos.slug}`;
@@ -76,13 +134,13 @@ function polymarketUrl(pos: Position): string | null {
 
 function PositionRow({
   pos,
+  gammaEndDate,
   onClick,
 }: {
   pos: Position;
+  gammaEndDate?: string;
   onClick: () => void;
 }) {
-  const { data: gammaEndDate } = useMarketEndDate(pos.slug || undefined);
-
   // Gamma API endDate is most accurate; fall back to title parsing
   const closeTime = gammaEndDate ?? parseCloseTimeFromTitle(pos.title) ?? undefined;
   const status = positionStatus(pos.redeemable, pos.curPrice, closeTime);
@@ -103,9 +161,7 @@ function PositionRow({
         <span className="text-neutral-300 truncate max-w-[180px]">
           {pos.title}
         </span>
-        <span className="text-neutral-500 shrink-0">
-          {pos.outcome}
-        </span>
+        <OutcomeBadge outcome={pos.outcome} />
         {url && (
           <a
             href={url}
@@ -146,6 +202,8 @@ export function PositionsTable({ address }: { address: string }) {
     snapshotAt: number;
   } | null>(null);
   const positionFilter = usePositionFilter(address);
+  const positionSort = usePositionSort(address);
+  const setPositionSort = useFilterStore((s) => s.setPositionSort);
 
   const { data: allPositions } = useQuery({
     queryKey: ["positions", address],
@@ -153,20 +211,37 @@ export function PositionsTable({ address }: { address: string }) {
       const raw = await fetchPositions(address);
       return raw
         .map(parsePosition)
-        .filter((p: Position) => p.size > 0.01)
-        .sort((a: Position, b: Position) => b.marketValue - a.marketValue);
+        .filter((p: Position) => p.size > 0.01);
     },
     refetchInterval: POLL_INTERVAL_POSITIONS,
   });
 
-  // Apply filters
-  const positions = useMemo(
-    () =>
-      allPositions
-        ? filterPositions(allPositions, positionFilter)
-        : undefined,
-    [allPositions, positionFilter],
-  );
+  // Batch-fetch per-market endDates from Gamma API
+  const slugs = useMemo(() => {
+    if (!allPositions) return [];
+    return [...new Set(allPositions.map((p) => p.slug).filter(Boolean))].sort();
+  }, [allPositions]);
+  const { data: endDateMap } = useMarketEndDates(slugs);
+
+  // Apply filters then sort (using Gamma endDates for accurate ordering)
+  const positions = useMemo(() => {
+    if (!allPositions) return undefined;
+    const filtered = filterPositions(allPositions, positionFilter);
+    return sortPositions(filtered, positionSort, endDateMap);
+  }, [allPositions, positionFilter, positionSort, endDateMap]);
+
+  const handlePositionSort = (field: string) => {
+    const f = field as PositionSortField;
+    if (positionSort.field === f) {
+      setPositionSort(address, {
+        field: f,
+        direction: positionSort.direction === "desc" ? "asc" : "desc",
+      });
+    } else {
+      // End Date defaults to ASC (soonest ending first); others default to DESC
+      setPositionSort(address, { field: f, direction: f === "endDate" ? "asc" : "desc" });
+    }
+  };
 
   const isStale = useMemo(() => {
     if (!snapshot || !allPositions) return false;
@@ -204,10 +279,24 @@ export function PositionsTable({ address }: { address: string }) {
 
   const positionRows = (
     <div className="space-y-1">
+      {/* Column headers */}
+      <div className="flex items-center justify-between gap-2 text-[10px] px-1 -mx-1 py-0.5 border-b border-neutral-800/50">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span className="shrink-0 w-[52px] text-neutral-600">Status</span>
+          <span className="text-neutral-600 truncate max-w-[180px]">Market</span>
+        </div>
+        <div className="flex items-center gap-3 shrink-0">
+          <SortHeader label="End Date" field="endDate" activeField={positionSort.field} direction={positionSort.direction} onSort={handlePositionSort} />
+          <SortHeader label="Value" field="marketValue" activeField={positionSort.field} direction={positionSort.direction} onSort={handlePositionSort} />
+          <SortHeader label="PnL" field="unrealizedPnl" activeField={positionSort.field} direction={positionSort.direction} onSort={handlePositionSort} />
+          <SortHeader label="Return" field="percentPnl" activeField={positionSort.field} direction={positionSort.direction} onSort={handlePositionSort} />
+        </div>
+      </div>
       {visible.map((pos) => (
         <PositionRow
           key={`${pos.conditionId}-${pos.outcome}`}
           pos={pos}
+          gammaEndDate={endDateMap?.[pos.slug]}
           onClick={() => setSnapshot({ position: { ...pos }, snapshotAt: Date.now() })}
         />
       ))}

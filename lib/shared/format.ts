@@ -42,6 +42,14 @@ export function parseCloseTimeFromTitle(title: string): string | null {
 
   const year = new Date().getFullYear();
   const utcMs = Date.UTC(year, monthIdx, day, hour + utcOffset, minute);
+
+  // Titles don't include the year. If the resulting date is >6 months in the
+  // future it almost certainly refers to the previous year (e.g. "December 18"
+  // parsed in February 2026 should be December 2025, not December 2026).
+  if (utcMs - Date.now() > 180 * 86400_000) {
+    return new Date(Date.UTC(year - 1, monthIdx, day, hour + utcOffset, minute)).toISOString();
+  }
+
   return new Date(utcMs).toISOString();
 }
 

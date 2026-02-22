@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { useSystemStore } from "@/lib/stores/system-store";
 import { formatUSD } from "@/lib/format";
@@ -109,6 +110,14 @@ export function StatusBar() {
         >
           {formatUSD(status.userBalance)}
         </span>
+      </div>
+
+      {/* Chart Links */}
+      <div className="flex items-center gap-1.5">
+        <span className="text-neutral-400">Charts</span>
+        <Link href="/chart/btc" className="text-neutral-300 hover:text-neutral-100 transition-colors">BTC</Link>
+        <Link href="/chart/eth" className="text-neutral-300 hover:text-neutral-100 transition-colors">ETH</Link>
+        <Link href="/chart/sol" className="text-neutral-300 hover:text-neutral-100 transition-colors">SOL</Link>
       </div>
 
       {/* Order Counts */}

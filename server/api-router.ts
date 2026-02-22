@@ -15,8 +15,12 @@ import { parsePosition } from "../lib/shared/parse";
 import {
   filterTrades,
   filterPositions,
+  sortTrades,
+  sortPositions,
   parseTradeFilterFromQuery,
   parsePositionFilterFromQuery,
+  parseTradeSortFromQuery,
+  parsePositionSortFromQuery,
 } from "../lib/shared/filters";
 import { getAllKnownTags } from "../lib/shared/tags";
 import type { TradeCache } from "./trade-cache";
@@ -77,6 +81,10 @@ export function createApiRouter(deps: ApiDeps): Router {
       const tagOverrides = deps.tagStore.getAll();
       trades = filterTrades(trades, filter, tagOverrides);
 
+      // Apply sort
+      const sort = parseTradeSortFromQuery(params);
+      trades = sortTrades(trades, sort);
+
       // Limit results
       const limit = parseInt(params.get("limit") ?? "100", 10);
       if (trades.length > limit) {
@@ -106,6 +114,10 @@ export function createApiRouter(deps: ApiDeps): Router {
       const filter = parsePositionFilterFromQuery(params);
       const tagOverrides = deps.tagStore.getAll();
       positions = filterPositions(positions, filter, tagOverrides);
+
+      // Apply sort
+      const sort = parsePositionSortFromQuery(params);
+      positions = sortPositions(positions, sort);
 
       res.json(positions);
     } catch (err) {

@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "MCP_DOCKER": {
+      "disabled": true
+    },
+    "bnbchain-mcp": {
+      "disabled": true
+    },
+    "evm-mcp": {
+      "disabled": true
+    },
+    "lmstudio-mcp": {
+      "disabled": true
+    },
+    "ollama-mcp": {
+      "disabled": true
+    }
+  }
+}

@@ -3,6 +3,27 @@ import { detectTags, type TagOverride, resolveTags } from "./tags";
 import { parseCloseTimeFromTitle } from "./format";
 
 // ---------------------------------------------------------------------------
+// Sort types
+// ---------------------------------------------------------------------------
+
+export type TradeSortField = "time" | "endTime" | "size" | "price" | "title";
+export type PositionSortField = "marketValue" | "endDate" | "unrealizedPnl" | "percentPnl";
+export type SortDirection = "asc" | "desc";
+
+export interface TradeSort {
+  field: TradeSortField;
+  direction: SortDirection;
+}
+
+export interface PositionSort {
+  field: PositionSortField;
+  direction: SortDirection;
+}
+
+export const DEFAULT_TRADE_SORT: TradeSort = { field: "time", direction: "desc" };
+export const DEFAULT_POSITION_SORT: PositionSort = { field: "marketValue", direction: "desc" };
+
+// ---------------------------------------------------------------------------
 // Filter types
 // ---------------------------------------------------------------------------
 
@@ -152,6 +173,94 @@ export function filterPositions(
 }
 
 // ---------------------------------------------------------------------------
+// Sort application
+// ---------------------------------------------------------------------------
+
+function parseEndTimeMs(title: string): number {
+  const ct = parseCloseTimeFromTitle(title);
+  if (!ct) return 0;
+  const t = new Date(ct).getTime();
+  return isNaN(t) ? 0 : t;
+}
+
+export function sortTrades(trades: Trade[], sort: TradeSort): Trade[] {
+  return [...trades].sort((a, b) => {
+    let cmp = 0;
+    switch (sort.field) {
+      case "time":
+        cmp = a.timestamp - b.timestamp;
+        break;
+      case "endTime":
+        cmp = parseEndTimeMs(a.title) - parseEndTimeMs(b.title);
+        break;
+      case "size":
+        cmp = a.size - b.size;
+        break;
+      case "price":
+        cmp = a.price - b.price;
+        break;
+      case "title":
+        cmp = a.title.localeCompare(b.title);
+        break;
+    }
+    return sort.direction === "desc" ? -cmp : cmp;
+  });
+}
+
+function parseEndDateMs(
+  pos: Position,
+  endDateOverrides?: Record<string, string>,
+): number {
+  // 1. Gamma API endDate override (most accurate — per-market with time)
+  if (endDateOverrides && pos.slug && endDateOverrides[pos.slug]) {
+    const t = new Date(endDateOverrides[pos.slug]).getTime();
+    if (!isNaN(t)) return t;
+  }
+  // 2. Parse close time from title (includes actual time, e.g. "3PM ET")
+  const ct = parseCloseTimeFromTitle(pos.title);
+  if (ct) {
+    const t = new Date(ct).getTime();
+    if (!isNaN(t)) return t;
+  }
+  // 3. Fall back to event-level endDate from position data (date only, no time)
+  if (!pos.endDate) return 0;
+  const t = new Date(pos.endDate).getTime();
+  return isNaN(t) ? 0 : t;
+}
+
+export function sortPositions(
+  positions: Position[],
+  sort: PositionSort,
+  endDateOverrides?: Record<string, string>,
+): Position[] {
+  return [...positions].sort((a, b) => {
+    let cmp = 0;
+    switch (sort.field) {
+      case "marketValue":
+        cmp = a.marketValue - b.marketValue;
+        break;
+      case "endDate": {
+        const aMs = parseEndDateMs(a, endDateOverrides);
+        const bMs = parseEndDateMs(b, endDateOverrides);
+        // Push positions without any end date to the bottom
+        if (aMs === 0 && bMs === 0) cmp = 0;
+        else if (aMs === 0) cmp = sort.direction === "desc" ? 1 : -1;
+        else if (bMs === 0) cmp = sort.direction === "desc" ? -1 : 1;
+        else cmp = aMs - bMs;
+        break;
+      }
+      case "unrealizedPnl":
+        cmp = a.unrealizedPnl - b.unrealizedPnl;
+        break;
+      case "percentPnl":
+        cmp = a.percentPnl - b.percentPnl;
+        break;
+    }
+    return sort.direction === "desc" ? -cmp : cmp;
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Query string parsing (for REST API)
 // ---------------------------------------------------------------------------
 
@@ -198,6 +307,17 @@ export function parseTradeFilterFromQuery(params: URLSearchParams): TradeFilter 
   return filter;
 }
 
+const VALID_TRADE_SORT_FIELDS: TradeSortField[] = ["time", "endTime", "size", "price", "title"];
+
+export function parseTradeSortFromQuery(params: URLSearchParams): TradeSort {
+  const field = params.get("sortBy") as TradeSortField | null;
+  const dir = params.get("sortDir") as SortDirection | null;
+  return {
+    field: field && VALID_TRADE_SORT_FIELDS.includes(field) ? field : DEFAULT_TRADE_SORT.field,
+    direction: dir === "asc" || dir === "desc" ? dir : DEFAULT_TRADE_SORT.direction,
+  };
+}
+
 export function parsePositionFilterFromQuery(params: URLSearchParams): PositionFilter {
   const filter: PositionFilter = {};
 
@@ -223,4 +343,15 @@ export function parsePositionFilterFromQuery(params: URLSearchParams): PositionF
   if (conditionId) filter.conditionId = conditionId;
 
   return filter;
+}
+
+const VALID_POSITION_SORT_FIELDS: PositionSortField[] = ["marketValue", "endDate", "unrealizedPnl", "percentPnl"];
+
+export function parsePositionSortFromQuery(params: URLSearchParams): PositionSort {
+  const field = params.get("sortBy") as PositionSortField | null;
+  const dir = params.get("sortDir") as SortDirection | null;
+  return {
+    field: field && VALID_POSITION_SORT_FIELDS.includes(field) ? field : DEFAULT_POSITION_SORT.field,
+    direction: dir === "asc" || dir === "desc" ? dir : DEFAULT_POSITION_SORT.direction,
+  };
 }

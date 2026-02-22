@@ -1,7 +1,14 @@
 "use client";
 
 import { create } from "zustand";
-import type { TradeFilter, PositionFilter, FilterPreset } from "../shared/filters";
+import type {
+  TradeFilter,
+  PositionFilter,
+  FilterPreset,
+  TradeSort,
+  PositionSort,
+} from "../shared/filters";
+import { DEFAULT_TRADE_SORT, DEFAULT_POSITION_SORT } from "../shared/filters";
 
 const PRESETS_KEY = "polymarket-filter-presets";
 const TAG_OVERRIDES_KEY = "polymarket-tag-overrides";
@@ -15,6 +22,10 @@ interface FilterState {
   tradeFilters: Record<string, TradeFilter>;
   positionFilters: Record<string, PositionFilter>;
 
+  // Active sort per wallet
+  tradeSorts: Record<string, TradeSort>;
+  positionSorts: Record<string, PositionSort>;
+
   // Presets
   presets: FilterPreset[];
 
@@ -23,6 +34,9 @@ interface FilterState {
   setPositionFilter: (wallet: string, filter: PositionFilter) => void;
   clearTradeFilter: (wallet: string) => void;
   clearPositionFilter: (wallet: string) => void;
+
+  setTradeSort: (wallet: string, sort: TradeSort) => void;
+  setPositionSort: (wallet: string, sort: PositionSort) => void;
 
   // Presets
   loadPresets: () => void;
@@ -49,6 +63,8 @@ function savePresetsToStorage(presets: FilterPreset[]): void {
 export const useFilterStore = create<FilterState>((set, get) => ({
   tradeFilters: {},
   positionFilters: {},
+  tradeSorts: {},
+  positionSorts: {},
   presets: [],
 
   setTradeFilter: (wallet, filter) => {
@@ -81,6 +97,20 @@ export const useFilterStore = create<FilterState>((set, get) => ({
       delete next[key];
       return { positionFilters: next };
     });
+  },
+
+  setTradeSort: (wallet, sort) => {
+    const key = wallet.toLowerCase();
+    set((s) => ({
+      tradeSorts: { ...s.tradeSorts, [key]: sort },
+    }));
+  },
+
+  setPositionSort: (wallet, sort) => {
+    const key = wallet.toLowerCase();
+    set((s) => ({
+      positionSorts: { ...s.positionSorts, [key]: sort },
+    }));
   },
 
   loadPresets: () => {
@@ -126,5 +156,17 @@ export function useTradeFilter(wallet: string): TradeFilter {
 export function usePositionFilter(wallet: string): PositionFilter {
   return useFilterStore(
     (s) => s.positionFilters[wallet.toLowerCase()] ?? EMPTY_POSITION_FILTER,
+  );
+}
+
+export function useTradeSort(wallet: string): TradeSort {
+  return useFilterStore(
+    (s) => s.tradeSorts[wallet.toLowerCase()] ?? DEFAULT_TRADE_SORT,
+  );
+}
+
+export function usePositionSort(wallet: string): PositionSort {
+  return useFilterStore(
+    (s) => s.positionSorts[wallet.toLowerCase()] ?? DEFAULT_POSITION_SORT,
   );
 }
