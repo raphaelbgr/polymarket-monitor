@@ -19,8 +19,18 @@ import {
   ColorType,
 } from "lightweight-charts";
 import type { CandleData, WhaleChartMarker, PriceThreshold, PredictionTag } from "@/lib/chart/types";
+import type { AIPrediction } from "@/lib/agent/types";
+import type { BandPoint } from "@/lib/agent/use-prediction-bands";
 import { TIMEFRAME_CONFIG, type Timeframe } from "@/lib/chart/constants";
 import type { ChartStyle } from "@/lib/stores/chart-store";
+import {
+  createAIPredictionTagElement,
+  AI_CARD_WIDTH,
+  AI_CARD_HEIGHT,
+  AI_CARD_GAP,
+  AI_RAIL_PADDING_TOP,
+  AI_RAIL_PADDING_LEFT,
+} from "./ai-prediction-overlay";
 
 // lightweight-charts displays numeric timestamps as UTC.
 // Offset by local timezone so the axis shows local time.
@@ -33,6 +43,11 @@ interface CandleChartProps {
   priceThresholds?: PriceThreshold[];
   predictionTags?: PredictionTag[];
   chartStyle?: ChartStyle;
+  // AI prediction overlay
+  aiPredictions?: AIPrediction[];
+  showPredictionBand?: boolean;
+  upperBand?: BandPoint[];
+  lowerBand?: BandPoint[];
 }
 
 // ---------------------------------------------------------------------------
@@ -145,6 +160,10 @@ export function CandleChart({
   priceThresholds,
   predictionTags,
   chartStyle = "area",
+  aiPredictions,
+  showPredictionBand,
+  upperBand,
+  lowerBand,
 }: CandleChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
@@ -152,8 +171,12 @@ export function CandleChart({
   const seriesRef = useRef<ISeriesApi<SeriesType> | null>(null);
   const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
   const priceLinesRef = useRef<IPriceLine[]>([]);
+  const aiPriceLinesRef = useRef<IPriceLine[]>([]);
+  const bandUpperRef = useRef<ISeriesApi<SeriesType> | null>(null);
+  const bandLowerRef = useRef<ISeriesApi<SeriesType> | null>(null);
   // Store latest tags in ref so viewport callbacks see fresh data
   const tagsRef = useRef<PredictionTag[]>([]);
+  const aiTagsRef = useRef<AIPrediction[]>([]);
 
   // Create chart — recreate when chartStyle changes
   useEffect(() => {
@@ -204,15 +227,39 @@ export function CandleChart({
 
     const seriesMarkers = createSeriesMarkers(series, []);
 
+    // AI confidence band series (purple, semi-transparent)
+    const bandUpper = chart.addSeries(AreaSeries, {
+      lineColor: "rgba(168, 85, 247, 0.4)",
+      topColor: "rgba(168, 85, 247, 0.15)",
+      bottomColor: "rgba(168, 85, 247, 0.0)",
+      lineWidth: 1,
+      priceLineVisible: false,
+      lastValueVisible: false,
+      crosshairMarkerVisible: false,
+    });
+    const bandLower = chart.addSeries(AreaSeries, {
+      lineColor: "rgba(168, 85, 247, 0.4)",
+      topColor: "rgba(168, 85, 247, 0.0)",
+      bottomColor: "rgba(168, 85, 247, 0.15)",
+      lineWidth: 1,
+      priceLineVisible: false,
+      lastValueVisible: false,
+      crosshairMarkerVisible: false,
+    });
+
     chartRef.current = chart;
     seriesRef.current = series;
     markersRef.current = seriesMarkers;
+    bandUpperRef.current = bandUpper;
+    bandLowerRef.current = bandLower;
 
     return () => {
       chart.remove();
       chartRef.current = null;
       seriesRef.current = null;
       markersRef.current = null;
+      bandUpperRef.current = null;
+      bandLowerRef.current = null;
     };
   }, [chartStyle]);
 
@@ -304,12 +351,68 @@ export function CandleChart({
   }, [priceThresholds]);
 
   // -----------------------------------------------------------------------
+  // AI prediction confidence bands
+  // -----------------------------------------------------------------------
+  useEffect(() => {
+    if (!bandUpperRef.current || !bandLowerRef.current) return;
+
+    if (!showPredictionBand || !upperBand?.length || !lowerBand?.length) {
+      bandUpperRef.current.setData([]);
+      bandLowerRef.current.setData([]);
+      return;
+    }
+
+    const upperData: AreaData<Time>[] = upperBand.map((p) => ({
+      time: (p.time + TZ_OFFSET_SEC) as Time,
+      value: p.upper,
+    }));
+    const lowerData: AreaData<Time>[] = lowerBand.map((p) => ({
+      time: (p.time + TZ_OFFSET_SEC) as Time,
+      value: p.lower,
+    }));
+
+    bandUpperRef.current.setData(upperData);
+    bandLowerRef.current.setData(lowerData);
+  }, [upperBand, lowerBand, showPredictionBand]);
+
+  // -----------------------------------------------------------------------
+  // AI prediction price lines (purple dashed)
+  // -----------------------------------------------------------------------
+  useEffect(() => {
+    if (!seriesRef.current) return;
+
+    for (const line of aiPriceLinesRef.current) {
+      seriesRef.current.removePriceLine(line);
+    }
+    aiPriceLinesRef.current = [];
+
+    if (!aiPredictions?.length) return;
+
+    for (const pred of aiPredictions) {
+      if (pred.resolved) continue;
+      const line = seriesRef.current.createPriceLine({
+        price: pred.predicted_price,
+        color: "#a855f780",
+        lineWidth: 1,
+        lineStyle: 2, // Dashed
+        axisLabelVisible: true,
+        title: `AI ${pred.direction.toUpperCase()} ${Math.round(pred.confidence * 100)}%`,
+      });
+      aiPriceLinesRef.current.push(line);
+    }
+  }, [aiPredictions]);
+
+  // -----------------------------------------------------------------------
   // Prediction tag overlay — direct DOM for performance
   // -----------------------------------------------------------------------
 
   useEffect(() => {
     tagsRef.current = predictionTags ?? [];
   }, [predictionTags]);
+
+  useEffect(() => {
+    aiTagsRef.current = aiPredictions ?? [];
+  }, [aiPredictions]);
 
   const repositionTags = useCallback(() => {
     const overlay = overlayRef.current;
@@ -396,6 +499,61 @@ export function CandleChart({
       line.setAttribute("stroke-dasharray", "4 3");
       svg.appendChild(line);
     }
+
+    // --- AI Prediction tags on LEFT rail ---
+    const aiTags = aiTagsRef.current;
+    if (aiTags.length > 0) {
+      const sortedAI = [...aiTags].sort(
+        (a, b) => new Date(a.target_time).getTime() - new Date(b.target_time).getTime(),
+      );
+
+      for (let i = 0; i < sortedAI.length; i++) {
+        const pred = sortedAI[i];
+        const cardY = AI_RAIL_PADDING_TOP + i * (AI_CARD_HEIGHT + AI_CARD_GAP);
+
+        const el = createAIPredictionTagElement(pred);
+        el.style.left = `${AI_RAIL_PADDING_LEFT}px`;
+        el.style.top = `${cardY}px`;
+        overlay.appendChild(el);
+
+        // Anchor at predicted price on the target time
+        const targetTimeSec = Math.floor(new Date(pred.target_time).getTime() / 1000);
+        const targetAdjusted = targetTimeSec + TZ_OFFSET_SEC;
+        const barsAhead = (targetAdjusted - lastCandleAdjusted) / intervalSec;
+        const logicalIndex = lastLogicalIndex + barsAhead;
+
+        const anchorX = timeScale.logicalToCoordinate(logicalIndex as Logical);
+        if (anchorX === null) continue;
+
+        const anchorY = series.priceToCoordinate(pred.predicted_price);
+        if (anchorY === null) continue;
+
+        // Diamond marker
+        const diamond = document.createElementNS(svgNS, "rect");
+        const dSize = 6;
+        diamond.setAttribute("x", String(anchorX - dSize / 2));
+        diamond.setAttribute("y", String(anchorY - dSize / 2));
+        diamond.setAttribute("width", String(dSize));
+        diamond.setAttribute("height", String(dSize));
+        diamond.setAttribute("fill", "#a855f7");
+        diamond.setAttribute("transform", `rotate(45 ${anchorX} ${anchorY})`);
+        svg.appendChild(diamond);
+
+        // Connector line: diamond → right edge of AI card
+        const cardRight = AI_RAIL_PADDING_LEFT + AI_CARD_WIDTH;
+        const aiCardCenterY = cardY + AI_CARD_HEIGHT / 2;
+        const aiLine = document.createElementNS(svgNS, "line");
+        aiLine.setAttribute("x1", String(anchorX));
+        aiLine.setAttribute("y1", String(anchorY));
+        aiLine.setAttribute("x2", String(cardRight));
+        aiLine.setAttribute("y2", String(aiCardCenterY));
+        aiLine.setAttribute("stroke", "#a855f7");
+        aiLine.setAttribute("stroke-opacity", "0.3");
+        aiLine.setAttribute("stroke-width", "1");
+        aiLine.setAttribute("stroke-dasharray", "4 3");
+        svg.appendChild(aiLine);
+      }
+    }
   }, [candles, timeframe]);
 
   // Subscribe to viewport changes for tag repositioning
@@ -416,7 +574,7 @@ export function CandleChart({
       const overlay = overlayRef.current;
       if (overlay) while (overlay.firstChild) overlay.removeChild(overlay.firstChild);
     };
-  }, [repositionTags, predictionTags]);
+  }, [repositionTags, predictionTags, aiPredictions]);
 
   const label = TIMEFRAME_CONFIG[timeframe].label;
 

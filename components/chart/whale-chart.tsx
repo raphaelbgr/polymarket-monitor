@@ -5,13 +5,17 @@ import { useShallow } from "zustand/react/shallow";
 import { CandleChart } from "./candle-chart";
 import { ChartStatusBar } from "./chart-status-bar";
 import { ChartSidebar } from "./chart-sidebar";
+import { AgentPanel } from "../agent/agent-panel";
 import { useChartStore } from "@/lib/stores/chart-store";
 import { useWalletStore } from "@/lib/stores/wallet-store";
 import { useTradeStore } from "@/lib/stores/trade-store";
 import { useSystemStore } from "@/lib/stores/system-store";
+import { useAgentStore } from "@/lib/stores/agent-store";
 import { useBinanceCandles } from "@/lib/chart/use-binance-candles";
 import { useChartPredictionTags } from "@/lib/chart/use-chart-whale-trades";
+import { usePredictionBands } from "@/lib/agent/use-prediction-bands";
 import { parsePriceThreshold } from "@/lib/chart/market-description";
+import { connectSSE, disconnectSSE } from "@/lib/agent/sse-client";
 import {
   connectWebSocket,
   disconnectWebSocket,
@@ -20,6 +24,7 @@ import {
 import { fetchTrades, parseTrade } from "@/lib/polymarket-api";
 import { ASSET_CONFIG } from "@/lib/chart/constants";
 import type { PriceThreshold } from "@/lib/chart/types";
+import type { AIPrediction, AgentLogEntry, SSEEventType } from "@/lib/agent/types";
 import type { RawTrade } from "@/lib/types";
 import { detectTags } from "@/lib/shared/tags";
 
@@ -45,6 +50,29 @@ export function WhaleChart({ asset }: WhaleChartProps) {
   const setWsConnected = useSystemStore((s) => s.setWsConnected);
   const setWsLastMessage = useSystemStore((s) => s.setWsLastMessage);
   const [rtdsConnected, setRtdsConnected] = useState(false);
+
+  // Agent store selectors
+  const agentServiceUrl = useAgentStore((s) => s.agentServiceUrl);
+  const activeSessionId = useAgentStore((s) => s.activeSessionId);
+  const setSseConnected = useAgentStore((s) => s.setSseConnected);
+  const addPrediction = useAgentStore((s) => s.addPrediction);
+  const resolvePrediction = useAgentStore((s) => s.resolvePrediction);
+  const addLogEntry = useAgentStore((s) => s.addLogEntry);
+  const aiPredictions = useAgentStore((s) => s.predictions);
+  const showPredictionBand = useAgentStore((s) => s.showPredictionBand);
+  const showAITags = useAgentStore((s) => s.showAITags);
+  const showResolvedPredictions = useAgentStore((s) => s.showResolvedPredictions);
+
+  // Compute confidence bands
+  const { upperBand, lowerBand } = usePredictionBands(aiPredictions, showPredictionBand);
+
+  // Filter AI predictions for chart display
+  const chartAIPredictions = useMemo(() => {
+    if (!showAITags) return [];
+    return showResolvedPredictions
+      ? aiPredictions
+      : aiPredictions.filter((p) => !p.resolved);
+  }, [aiPredictions, showAITags, showResolvedPredictions]);
 
   // Polling cursors
   const cursors = useRef<Record<string, number>>({});
@@ -152,6 +180,33 @@ export function WhaleChart({ asset }: WhaleChartProps) {
     };
   }, [initialized, wallets.length, handleWsTrade, handleWsStatus]);
 
+  // Connect SSE to agent service
+  const handleSSEEvent = useCallback(
+    (eventType: SSEEventType, data: unknown) => {
+      switch (eventType) {
+        case "prediction":
+          addPrediction(data as AIPrediction);
+          break;
+        case "agent_log":
+          addLogEntry(data as AgentLogEntry);
+          break;
+        case "prediction_resolved":
+          resolvePrediction(data as AIPrediction);
+          break;
+      }
+    },
+    [addPrediction, addLogEntry, resolvePrediction],
+  );
+
+  useEffect(() => {
+    const streamUrl = `${agentServiceUrl}/stream`;
+    connectSSE(streamUrl, activeSessionId, handleSSEEvent, setSseConnected);
+
+    return () => {
+      disconnectSSE();
+    };
+  }, [agentServiceUrl, activeSessionId, handleSSEEvent, setSseConnected]);
+
   // Polling fallback for trades
   useEffect(() => {
     if (!initialized || wallets.length === 0) return;
@@ -221,8 +276,15 @@ export function WhaleChart({ asset }: WhaleChartProps) {
             predictionTags={sources.polymarket ? predictionTags : []}
             priceThresholds={sources.polymarket ? priceThresholds : []}
             chartStyle={chartStyle}
+            aiPredictions={chartAIPredictions}
+            showPredictionBand={showPredictionBand}
+            upperBand={upperBand}
+            lowerBand={lowerBand}
           />
         </div>
+
+        {/* Agent activity panel */}
+        <AgentPanel />
       </div>
 
       {/* Sidebar */}

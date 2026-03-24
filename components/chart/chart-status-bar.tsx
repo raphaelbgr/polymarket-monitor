@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { ASSET_CONFIG, SUPPORTED_ASSETS } from "@/lib/chart/constants";
 import { useChartStore } from "@/lib/stores/chart-store";
+import { useAgentStore } from "@/lib/stores/agent-store";
+import { SessionSelector } from "./session-selector";
 
 interface ChartStatusBarProps {
   asset: string;
@@ -20,6 +22,7 @@ export function ChartStatusBar({
   const sidebarOpen = useChartStore((s) => s.sidebarOpen);
   const chartStyle = useChartStore((s) => s.chartStyle);
   const toggleChartStyle = useChartStore((s) => s.toggleChartStyle);
+  const sseConnected = useAgentStore((s) => s.sseConnected);
 
   return (
     <div className="sticky top-0 z-50 flex items-center gap-4 border-b border-[#222] bg-[#0a0a0a]/95 px-4 py-2 font-mono text-xs backdrop-blur">
@@ -54,6 +57,9 @@ export function ChartStatusBar({
         {config?.label} Chart
       </span>
 
+      {/* Session selector */}
+      <SessionSelector />
+
       {/* Chart style toggle + Connection indicators */}
       <div className="flex items-center gap-3 ml-auto">
         <button
@@ -84,6 +90,15 @@ export function ChartStatusBar({
             }`}
           />
           <span className="text-neutral-400">RTDS</span>
+        </div>
+
+        <div className="flex items-center gap-1.5">
+          <div
+            className={`h-2 w-2 rounded-full ${
+              sseConnected ? "bg-violet-500" : "bg-neutral-600"
+            }`}
+          />
+          <span className="text-neutral-400">AI</span>
         </div>
 
         {/* Sidebar toggle */}

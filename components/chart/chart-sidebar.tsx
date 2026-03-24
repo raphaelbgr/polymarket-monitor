@@ -3,6 +3,7 @@
 import { TimeframeSection } from "./timeframe-section";
 import { WalletSection } from "./wallet-section";
 import { SourceSection } from "./source-section";
+import { PredictionSection } from "./prediction-section";
 
 export function ChartSidebar() {
   return (
@@ -11,6 +12,7 @@ export function ChartSidebar() {
         <TimeframeSection />
         <WalletSection />
         <SourceSection />
+        <PredictionSection />
       </div>
     </div>
   );
