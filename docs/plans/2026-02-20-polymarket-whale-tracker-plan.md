@@ -23,7 +23,7 @@
 
 Run:
 ```bash
-cd C:/Users/rbgnr/git/polymarket-monitor
+cd ~/git/polymarket-monitor
 npx create-next-app@latest . --typescript --tailwind --app --eslint --no-src-dir --import-alias "@/*" --use-npm
 ```
 
@@ -2424,14 +2424,14 @@ log(`WebSocket server listening on ws://localhost:${PORT}`);
 
 Run:
 ```bash
-cd C:/Users/rbgnr/git/polymarket-monitor/server
+cd ~/git/polymarket-monitor/server
 npm install
 ```
 
 **Step 6: Commit**
 
 ```bash
-cd C:/Users/rbgnr/git/polymarket-monitor
+cd ~/git/polymarket-monitor
 git add server/
 git commit -m "feat: add copy-trade server with CLOB client, circuit breaker, and WS protocol"
 ```
@@ -2570,7 +2570,7 @@ git commit -m "feat: add Vercel config and gitignore for server secrets"
 **Step 1: Run the dashboard**
 
 ```bash
-cd C:/Users/rbgnr/git/polymarket-monitor
+cd ~/git/polymarket-monitor
 npm run dev
 ```
 
@@ -2585,7 +2585,7 @@ Visit `http://localhost:3000`. Verify:
 **Step 2: Run the copy-trade server (optional, needs credentials)**
 
 ```bash
-cd C:/Users/rbgnr/git/polymarket-monitor/server
+cd ~/git/polymarket-monitor/server
 # Create .env with PRIVATE_KEY and PROXY_ADDRESS
 npm run dev
 ```
@@ -2598,7 +2598,7 @@ Verify:
 **Step 3: Build check**
 
 ```bash
-cd C:/Users/rbgnr/git/polymarket-monitor
+cd ~/git/polymarket-monitor
 npm run build
 ```
 
